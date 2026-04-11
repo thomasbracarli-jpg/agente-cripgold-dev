@@ -17,7 +17,6 @@ NEWS_KEY     = os.environ.get("NEWS_API_KEY", "600c50b8de384fa88ba678ab4724d738"
 # ============================================================
 
 def enviar_telegram(texto):
-    """Envía un mensaje a todos los destinatarios."""
     for chat_id in DESTINATARIOS:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {
@@ -33,7 +32,6 @@ def enviar_telegram(texto):
 
 
 def gestionar_folio(tipo):
-    """Lleva un contador de envíos por tipo (precios / noticias)."""
     archivo = os.path.join(os.path.dirname(__file__), f"contador_{tipo}.txt")
     try:
         with open(archivo, "r") as f:
@@ -50,18 +48,15 @@ def gestionar_folio(tipo):
 
 
 def gestionar_historial(titulo):
-    """Evita repetir noticias ya enviadas (guarda últimas 300)."""
     archivo = os.path.join(os.path.dirname(__file__), "historial_noticias.txt")
     try:
         with open(archivo, "r") as f:
             historial = f.read().splitlines()
     except:
         historial = []
-
     clave = titulo[:60].strip()
     if clave in historial:
-        return True  # ya fue enviada
-
+        return True
     historial.append(clave)
     try:
         with open(archivo, "w") as f:
@@ -76,10 +71,6 @@ def gestionar_historial(titulo):
 # ============================================================
 
 def obtener_precio_oro_cop():
-    """
-    Obtiene el precio del oro en USD desde Yahoo Finance
-    y lo convierte a COP. Retorna (oro_usd, usd_cop, precio_gramo_cop).
-    """
     headers = {
         'User-Agent': (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -87,7 +78,6 @@ def obtener_precio_oro_cop():
             'Chrome/124.0.0.0 Safari/537.36'
         )
     }
-
     oro_usd = None
     for ticker in ["XAUUSD=X", "GC=F", "XAUUSD=P"]:
         try:
@@ -117,10 +107,6 @@ def obtener_precio_oro_cop():
 
 
 def construir_mensaje_precios(base_gramo, porcentaje, folio, fecha):
-    """
-    Genera el bloque de texto de precios para un porcentaje dado.
-    porcentaje: 0.83 o 0.84
-    """
     base = base_gramo * porcentaje
     etiqueta = f"{int(porcentaje * 100)}%"
 
@@ -170,7 +156,6 @@ def tarea_precios(fecha):
 
     folio = gestionar_folio("precios")
 
-    # Encabezado con datos de mercado
     encabezado = (
         f"📊 <b>Mercado hoy:</b>\n"
         f"🥇 Oro: <b>${oro_usd:,.2f} USD/oz</b>\n"
@@ -179,11 +164,9 @@ def tarea_precios(fecha):
     )
     enviar_telegram(encabezado)
 
-    # Tanda 1 — Base al 83%
     msg_83 = construir_mensaje_precios(gramo_cop, 0.83, folio, fecha)
     enviar_telegram(msg_83)
 
-    # Tanda 2 — Base al 84%
     msg_84 = construir_mensaje_precios(gramo_cop, 0.84, folio, fecha)
     enviar_telegram(msg_84)
 
@@ -195,54 +178,73 @@ def tarea_precios(fecha):
 # ============================================================
 
 def obtener_noticias():
-    """
-    Consulta NewsAPI con dos búsquedas precisas:
-    una en español y otra en inglés.
-    Filtra agresivamente para eliminar noticias fuera de contexto.
-    """
     ahora = datetime.datetime.utcnow()
     hace_48h = (ahora - datetime.timedelta(hours=48)).strftime('%Y-%m-%dT%H:%M:%S')
 
-    # Palabras que DEBEN aparecer para que la noticia sea válida
-    PALABRAS_CLAVE = [
-        "oro", "gold", "plata", "silver", "esmeralda", "emerald",
-        "diamante", "diamond", "platino", "platinum", "paladio",
-        "lingote", "bullion", "onza troy", "troy ounce",
-        "metal precioso", "precious metal", "xau", "xag",
-        "minería de oro", "gold mining", "reserva de oro",
-        "banco central", "central bank gold", "muzo", "marmato"
+    METALES_DIRECTOS = [
+        "precio del oro", "precio de la plata", "precio del platino",
+        "gold price", "silver price", "platinum price", "palladium price",
+        "oro físico", "plata física", "lingote de oro", "lingote de plata",
+        "gold bullion", "silver bullion",
+        "onza de oro", "onza de plata", "troy ounce",
+        "reservas de oro", "gold reserves", "gold holdings",
+        "minería de oro", "gold mining", "explotación de oro",
+        "mercado del oro", "gold market", "gold futures", "gold etf",
+        "xauusd", "xagusd", "xau/usd", "xag/usd",
+        "esmeralda", "emerald", "esmeraldas de muzo", "esmeraldas colombianas",
+        "diamante", "diamond", "mercado de diamantes", "diamond market",
+        "piedra preciosa", "precious stone", "gema",
+        "platino", "platinum", "paladio", "palladium",
+        "banco central compra oro", "central bank gold", "central bank buys gold",
+        "brics oro", "brics gold",
+        "cotización del oro", "cotización de la plata",
+        "fiebre del oro", "gold rush",
+        "muzo", "marmato", "chivor"
     ]
 
-    # Palabras que ELIMINAN la noticia aunque tenga "oro" u otras
     PALABRAS_BASURA = [
         "fútbol", "futbol", "soccer", "balón de oro", "bola de oro",
+        "gol de oro", "medalla de oro", "copa de oro", "nba", "nfl",
+        "champions", "premier league", "liga endesa", "new balance",
+        "milei", "zelenski", "trump", "biden", "congreso", "senado",
+        "elecciones", "partido político", "campaña electoral",
+        "plazo fijo", "tasa de interés", "tasa de cambio del peso",
+        "cepo al dólar", "dólar blue", "flexibilizaciones del cepo",
+        "acopio de granos", "granos", "soja", "trigo", "maíz", "cosecha",
+        "agro", "agricultura", "ganadería", "sector agropecuario",
+        "monedas dejarán de circular", "retiro de monedas", "de curso legal",
+        "billete", "papel moneda",
+        "samsung", "xiaomi", "iphone", "apple", "android",
+        "receta", "cocina", "chef", "restaurante",
+        "zara", "moda", "ropa", "perfume", "cine", "película",
+        "pelicula", "estreno", "oscar", "emmy", "grammy",
+        "zombi", "zombie", "celular", "teléfono", "smartphone",
+        "laptop", "tablet", "videojuego",
         "corazón de oro", "golden globe", "golden state", "golden gate",
-        "edad de oro", "regla de oro", "samsung", "xiaomi", "iphone",
-        "receta", "cocina", "chef", "restaurante", "zara", "moda",
-        "ropa", "perfume", "cine", "película", "pelicula", "estreno",
-        "oscar", "emmy", "grammy", "nba", "nfl", "gol de oro",
-        "medalla de oro", "record de oro", "zombi", "zombie",
-        "celular", "teléfono", "smartphone", "laptop", "tablet",
-        "tono de oro", "color dorado", "golden hour", "hora dorada"
+        "edad de oro", "regla de oro", "hora dorada", "golden hour",
+        "tono de oro", "color dorado", "color oro", "acabado dorado",
+        "aniversario de oro", "boda de oro", "boda de plata",
+        "disco de oro", "disco de plata", "récord de oro",
+        "movistar plus", "el corte inglés"
     ]
 
     noticias_validas = []
     titulos_vistos = set()
 
-    # --- Consulta en ESPAÑOL ---
     q_es = (
-        '("precio del oro" OR "precio de la plata" OR "esmeraldas colombianas" OR '
+        '("precio del oro" OR "precio de la plata" OR "esmeraldas" OR '
         '"lingotes de oro" OR "onza de oro" OR "minería de oro" OR '
-        '"metales preciosos" OR "reservas de oro" OR "banco central" OR '
-        '"mercado del oro" OR "cotización del oro" OR "BRICS oro")'
+        '"reservas de oro" OR "cotización del oro" OR "mercado del oro" OR '
+        '"banco central compra oro" OR "BRICS oro" OR "platino" OR "paladio" OR '
+        '"diamantes" OR "piedras preciosas" OR "muzo" OR "marmato")'
     )
 
-    # --- Consulta en INGLÉS ---
     q_en = (
-        '("gold price" OR "silver price" OR "gold mining" OR "gold bullion" OR '
+        '("gold price" OR "silver price" OR "gold bullion" OR "gold mining" OR '
         '"precious metals" OR "central bank gold" OR "troy ounce" OR '
         '"XAU" OR "gold reserves" OR "diamond market" OR "emerald" OR '
-        '"platinum price" OR "palladium" OR "gold ETF" OR "gold futures")'
+        '"platinum price" OR "palladium" OR "gold ETF" OR "gold futures" OR '
+        '"gold holdings" OR "BRICS gold")'
     )
 
     for q, lang in [(q_es, 'es'), (q_en, 'en')]:
@@ -275,19 +277,15 @@ def obtener_noticias():
 
                 texto_check = (titulo + " " + desc).lower()
 
-                # Filtro 1: eliminar basura
                 if any(b in texto_check for b in PALABRAS_BASURA):
                     continue
 
-                # Filtro 2: debe contener al menos una palabra clave real
-                if not any(k in texto_check for k in PALABRAS_CLAVE):
+                if not any(m in texto_check for m in METALES_DIRECTOS):
                     continue
 
-                # Filtro 3: no repetir titulares ya enviados históricamente
                 if gestionar_historial(titulo):
                     continue
 
-                # Filtro 4: no repetir en esta misma tanda
                 clave = titulo[:50].lower()
                 if clave in titulos_vistos:
                     continue
@@ -337,13 +335,10 @@ if __name__ == "__main__":
     print(f"  AGENTE CRIPGOLD V2 — {fecha}")
     print(f"{'='*50}\n")
 
-    # Aviso de inicio
     enviar_telegram(f"🤖 <b>Agente CripGold V2 — Iniciado</b>\n📅 {fecha}")
 
-    # Ejecutar tareas
     tarea_precios(fecha)
     tarea_noticias(fecha)
 
-    # Aviso de cierre
     enviar_telegram("✅ <b>Agente CripGold — Tareas completadas.</b>")
     print("\n[DONE] Agente finalizado correctamente.")
