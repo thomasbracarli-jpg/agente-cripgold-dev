@@ -76,27 +76,47 @@ def obtener_precio_oro_cop():
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/124.0.0.0 Safari/537.36'
-        )
+        ),
+        'Accept': 'application/json'
     }
-    oro_usd = None
-    for ticker in ["XAUUSD=X", "GC=F", "XAUUSD=P"]:
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
-            res = requests.get(url, headers=headers, timeout=12)
-            if res.status_code == 200:
-                precio = res.json()['chart']['result'][0]['meta']['regularMarketPrice']
-                if precio and float(precio) > 100:
-                    oro_usd = float(precio)
-                    break
-        except:
-            continue
 
+    oro_usd = None
+
+    # FUENTE 1: goldprice.org — misma fuente que usa Thomas manualmente
+    try:
+        url_gp = "https://data-asg.goldprice.org/dbXRates/USD"
+        res_gp = requests.get(url_gp, headers=headers, timeout=12)
+        if res_gp.status_code == 200:
+            data_gp = res_gp.json()
+            precio_gp = data_gp['items'][0]['xauPrice']
+            if precio_gp and float(precio_gp) > 100:
+                oro_usd = float(precio_gp)
+                print(f"[PRECIOS] Precio obtenido desde goldprice.org: ${oro_usd}")
+    except Exception as e:
+        print(f"[PRECIOS] goldprice.org falló: {e}")
+
+    # FUENTE 2: Yahoo Finance como respaldo
+    if not oro_usd:
+        for ticker in ["XAUUSD=X", "GC=F"]:
+            try:
+                url_yf = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
+                res_yf = requests.get(url_yf, headers=headers, timeout=12)
+                if res_yf.status_code == 200:
+                    precio_yf = res_yf.json()['chart']['result'][0]['meta']['regularMarketPrice']
+                    if precio_yf and float(precio_yf) > 100:
+                        oro_usd = float(precio_yf)
+                        print(f"[PRECIOS] Precio obtenido desde Yahoo Finance ({ticker}): ${oro_usd}")
+                        break
+            except:
+                continue
+
+    # TRM: USD a COP
     usd_cop = None
     try:
-        url_c = "https://query1.finance.yahoo.com/v8/finance/chart/COP=X?interval=1d&range=5d"
-        res_c = requests.get(url_c, headers=headers, timeout=12)
-        if res_c.status_code == 200:
-            usd_cop = float(res_c.json()['chart']['result'][0]['meta']['regularMarketPrice'])
+        url_cop = "https://query1.finance.yahoo.com/v8/finance/chart/COP=X?interval=1d&range=5d"
+        res_cop = requests.get(url_cop, headers=headers, timeout=12)
+        if res_cop.status_code == 200:
+            usd_cop = float(res_cop.json()['chart']['result'][0]['meta']['regularMarketPrice'])
     except:
         pass
 
@@ -148,8 +168,8 @@ def tarea_precios(fecha):
     if not gramo_cop:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — ERROR EN PRECIOS</b>\n"
-            "No se pudo obtener el precio del oro desde Yahoo Finance.\n"
-            "Verifica manualmente: <a href='https://finance.yahoo.com/quote/GC%3DF/'>Yahoo Finance Oro</a>"
+            "No se pudo obtener el precio del oro.\n"
+            "Verifica manualmente: <a href='https://goldprice.org'>goldprice.org</a>"
         )
         print("[PRECIOS] ERROR: no se obtuvo precio.")
         return
@@ -183,46 +203,44 @@ def obtener_noticias():
 
     METALES_DIRECTOS = [
         "precio del oro", "precio de la plata", "precio del platino",
-        "gold price", "silver price", "platinum price", "palladium price",
         "oro físico", "plata física", "lingote de oro", "lingote de plata",
-        "gold bullion", "silver bullion",
-        "onza de oro", "onza de plata", "troy ounce",
-        "reservas de oro", "gold reserves", "gold holdings",
-        "minería de oro", "gold mining", "explotación de oro",
-        "mercado del oro", "gold market", "gold futures", "gold etf",
-        "xauusd", "xagusd", "xau/usd", "xag/usd",
-        "esmeralda", "emerald", "esmeraldas de muzo", "esmeraldas colombianas",
-        "diamante", "diamond", "mercado de diamantes", "diamond market",
-        "piedra preciosa", "precious stone", "gema",
-        "platino", "platinum", "paladio", "palladium",
-        "banco central compra oro", "central bank gold", "central bank buys gold",
-        "brics oro", "brics gold",
-        "cotización del oro", "cotización de la plata",
-        "fiebre del oro", "gold rush",
-        "muzo", "marmato", "chivor"
+        "onza de oro", "onza de plata",
+        "reservas de oro", "minería de oro", "explotación de oro",
+        "mercado del oro", "cotización del oro", "cotización de la plata",
+        "esmeralda", "esmeraldas de muzo", "esmeraldas colombianas",
+        "diamante", "mercado de diamantes", "piedra preciosa", "gema",
+        "platino como metal", "precio del platino", "paladio",
+        "banco central compra oro", "brics oro",
+        "fiebre del oro", "muzo", "marmato", "chivor",
+        "metal precioso", "metales preciosos"
     ]
 
     PALABRAS_BASURA = [
+        # Deportes
         "fútbol", "futbol", "soccer", "balón de oro", "bola de oro",
         "gol de oro", "medalla de oro", "copa de oro", "nba", "nfl",
         "champions", "premier league", "liga endesa", "new balance",
-        "milei", "zelenski", "trump", "biden", "congreso", "senado",
-        "elecciones", "partido político", "campaña electoral",
-        "plazo fijo", "tasa de interés", "tasa de cambio del peso",
-        "cepo al dólar", "dólar blue", "flexibilizaciones del cepo",
-        "acopio de granos", "granos", "soja", "trigo", "maíz", "cosecha",
-        "agro", "agricultura", "ganadería", "sector agropecuario",
-        "monedas dejarán de circular", "retiro de monedas", "de curso legal",
-        "billete", "papel moneda",
+        # Premios de entretenimiento — "platino", "plata", "oro" en contexto artístico
+        "premio platino", "premios platino", "pelean el platino",
+        "spirit awards", "golden globe", "bafta", "emmy", "grammy",
+        "festival de cine", "trayectoria artística", "actor", "actriz",
+        "serie", "temporada", "película", "pelicula", "estreno", "cine",
+        # Política sin relación a metales
+        "zelenski", "congreso", "senado", "elecciones", "partido político",
+        "campaña electoral", "reforma tributaria", "reforma pensional",
+        # Economía general sin metales
+        "plazo fijo", "tasa de interés", "cepo al dólar", "dólar blue",
+        "flexibilizaciones del cepo", "acopio de granos", "granos",
+        "soja", "trigo", "maíz", "cosecha", "agro", "agricultura",
+        "ganadería", "monedas dejarán de circular", "retiro de monedas",
+        "de curso legal", "billete", "papel moneda",
+        # Tecnología / moda
         "samsung", "xiaomi", "iphone", "apple", "android",
-        "receta", "cocina", "chef", "restaurante",
-        "zara", "moda", "ropa", "perfume", "cine", "película",
-        "pelicula", "estreno", "oscar", "emmy", "grammy",
-        "zombi", "zombie", "celular", "teléfono", "smartphone",
-        "laptop", "tablet", "videojuego",
-        "corazón de oro", "golden globe", "golden state", "golden gate",
-        "edad de oro", "regla de oro", "hora dorada", "golden hour",
-        "tono de oro", "color dorado", "color oro", "acabado dorado",
+        "receta", "cocina", "chef", "restaurante", "zara", "moda", "ropa",
+        "celular", "teléfono", "smartphone", "laptop", "tablet", "videojuego",
+        # Metáforas
+        "corazón de oro", "golden gate", "edad de oro", "regla de oro",
+        "hora dorada", "color dorado", "color oro", "acabado dorado",
         "aniversario de oro", "boda de oro", "boda de plata",
         "disco de oro", "disco de plata", "récord de oro",
         "movistar plus", "el corte inglés"
@@ -231,28 +249,29 @@ def obtener_noticias():
     noticias_validas = []
     titulos_vistos = set()
 
-    q_es = (
+    # CONSULTA 1 — Noticias internacionales de metales y gemas en español
+    q_general = (
         '("precio del oro" OR "precio de la plata" OR "esmeraldas" OR '
         '"lingotes de oro" OR "onza de oro" OR "minería de oro" OR '
         '"reservas de oro" OR "cotización del oro" OR "mercado del oro" OR '
-        '"banco central compra oro" OR "BRICS oro" OR "platino" OR "paladio" OR '
-        '"diamantes" OR "piedras preciosas" OR "muzo" OR "marmato")'
+        '"banco central compra oro" OR "BRICS oro" OR "metal precioso" OR '
+        '"paladio" OR "diamantes" OR "piedras preciosas")'
     )
 
-    q_en = (
-        '("gold price" OR "silver price" OR "gold bullion" OR "gold mining" OR '
-        '"precious metals" OR "central bank gold" OR "troy ounce" OR '
-        '"XAU" OR "gold reserves" OR "diamond market" OR "emerald" OR '
-        '"platinum price" OR "palladium" OR "gold ETF" OR "gold futures" OR '
-        '"gold holdings" OR "BRICS gold")'
+    # CONSULTA 2 — Noticias locales Colombia y LATAM
+    q_latam = (
+        '(Colombia OR "América Latina" OR Latinoamérica OR Venezuela OR Perú OR '
+        'Ecuador OR México OR Chile OR Brasil OR "Banco de la República") AND '
+        '("oro" OR "plata" OR "esmeraldas" OR "minería" OR "metales preciosos" OR '
+        '"muzo" OR "marmato" OR "chivor" OR "diamantes" OR "piedras preciosas")'
     )
 
-    for q, lang in [(q_es, 'es'), (q_en, 'en')]:
+    for q in [q_general, q_latam]:
         if len(noticias_validas) >= 10:
             break
         params = {
             'q': q,
-            'language': lang,
+            'language': 'es',
             'sortBy': 'publishedAt',
             'from': hace_48h,
             'apiKey': NEWS_KEY,
@@ -277,15 +296,19 @@ def obtener_noticias():
 
                 texto_check = (titulo + " " + desc).lower()
 
+                # FILTRO 1: descarte por basura
                 if any(b in texto_check for b in PALABRAS_BASURA):
                     continue
 
+                # FILTRO 2 (OBLIGATORIO): debe mencionar metal/gema directamente
                 if not any(m in texto_check for m in METALES_DIRECTOS):
                     continue
 
+                # FILTRO 3: sin repetidos históricos
                 if gestionar_historial(titulo):
                     continue
 
+                # FILTRO 4: sin repetidos en esta tanda
                 clave = titulo[:50].lower()
                 if clave in titulos_vistos:
                     continue
@@ -294,7 +317,7 @@ def obtener_noticias():
                 noticias_validas.append({'title': titulo, 'url': url})
 
         except Exception as e:
-            print(f"[NOTICIAS] Error consultando NewsAPI ({lang}): {e}")
+            print(f"[NOTICIAS] Error en consulta: {e}")
 
     return noticias_validas
 
@@ -306,8 +329,7 @@ def tarea_noticias(fecha):
     if not arts:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
-            "No se encontraron noticias nuevas sobre metales y gemas en las últimas 48h.\n"
-            "Puede ser un día sin novedades o un problema con NewsAPI."
+            "No se encontraron noticias nuevas sobre metales y gemas en las últimas 48h."
         )
         print("[NOTICIAS] Sin resultados válidos hoy.")
         return
