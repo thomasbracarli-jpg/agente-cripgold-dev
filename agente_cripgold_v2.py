@@ -178,8 +178,9 @@ def tarea_precios(fecha):
     print("[PRECIOS] Iniciando...")
     oro_usd, usd_cop, gramo_cop = obtener_precio_oro_cop()
 
-    if not gramo_cop:
+if not gramo_cop:
         enviar_telegram(
-            "⚠️ <b>AGENTE CRIPGOLD — ERROR EN PRECIOS</b>\n"
-            "No se pudo obtener el precio del oro desde Yahoo Finance.\n"
-            "Verifica manualmente: <a href='https://finance.yahoo.com/quote/G
+            "⚠️ AGENTE CRIPGOLD — ERROR EN PRECIOS\n"
+            "No se pudo obtener el precio del oro.\n"
+            "Verifica manualmente en: https://finance.yahoo.com"
+        )
