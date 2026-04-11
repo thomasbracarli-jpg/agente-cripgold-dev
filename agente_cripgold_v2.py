@@ -111,7 +111,7 @@ def tarea_precios(fecha):
     print("[PRECIOS] Iniciando...")
     oro_usd, usd_cop, gramo_cop = obtener_precio_oro_cop()
     if not gramo_cop:
-        enviar_telegram("⚠️ <b>AGENTE CRIPGOLD — ERROR EN PRECIOS</b>\nNo se pudo obtener el precio del oro.\nVerifica: <a href='https://goldprice.org'>goldprice.org</a>")
+        enviar_telegram("⚠️ <b>AGENTE CRIPGOLD — ERROR EN PRECIOS</b>\nVerifica: <a href='https://goldprice.org'>goldprice.org</a>")
         return
     folio = gestionar_folio("precios")
     enviar_telegram(f"📊 <b>Mercado hoy:</b>\n🥇 Oro: <b>${oro_usd:,.2f} USD/oz</b>\n💵 TRM: <b>${usd_cop:,.2f} COP/USD</b>\n⚖️ Gramo 24K: <b>${gramo_cop:,.0f} COP</b>")
@@ -123,58 +123,103 @@ def obtener_noticias():
     ahora = datetime.datetime.utcnow()
     hace_72h = (ahora - datetime.timedelta(hours=72)).strftime('%Y-%m-%dT%H:%M:%S')
 
-    METALES_DIRECTOS = [
-        "oro", "plata", "esmeralda", "diamante",
-        "platino", "paladio", "lingote", "onza",
-        "metal precioso", "metales preciosos",
-        "piedra preciosa", "piedras preciosas", "gema",
+    # ── FRASES COMPUESTAS: solo aparecen en noticias genuinas del sector ──
+    # "precio del oro" nunca aparece en una nota de Mar del Plata.
+    CONTEXTO_MERCADO = [
+        # Oro como metal / mercado
+        "precio del oro", "cotización del oro", "onza de oro",
+        "mercado del oro", "reservas de oro", "lingote de oro",
+        "minería de oro", "minería aurífera", "oro físico",
+        "inversión en oro", "demanda de oro", "oferta de oro",
+        # Plata como metal / mercado
+        "precio de la plata", "cotización de la plata", "onza de plata",
+        "mercado de la plata", "lingote de plata", "plata física",
+        "inversión en plata", "demanda de plata",
+        # Gemas — palabras menos ambiguas, no necesitan frase
+        "esmeralda", "esmeraldas", "diamante", "diamantes",
+        "piedra preciosa", "piedras preciosas", "gema", "gemas",
+        # Otros metales preciosos
+        "precio del platino", "precio del paladio", "paladio",
+        "metales preciosos",
+        # Lugares específicos de minería colombiana
         "muzo", "marmato", "chivor",
-        "minería de oro", "minería aurífera"
     ]
 
-    PALABRAS_BASURA = [
-        "fútbol", "futbol", "soccer", "balón de oro", "bola de oro",
-        "gol de oro", "medalla de oro", "copa de oro", "nba", "nfl",
-        "champions", "premier league", "liga endesa", "new balance",
-        "premio platino", "premios platino", "pelean el platino",
-        "spirit awards", "golden globe", "bafta", "emmy", "grammy",
-        "festival de cine", "trayectoria artística", "actor", "actriz",
-        "serie televisiva", "temporada", "estreno", "cine",
-        "zelenski", "congreso", "senado", "elecciones", "partido político",
-        "campaña electoral", "reforma tributaria", "reforma pensional",
+    # ── ELIMINACIÓN INMEDIATA ─────────────────────────────────────────────
+    BASURA = [
+        # Ciudades y ríos que contienen "plata" u "oro"
+        "mar del plata", "río de la plata", "la plata", "villa del parque",
+        "puerto madryn", "bahía blanca",
+        # Crímenes, accidentes, sucesos (mencionan "oro" de paso)
+        "estafa", "robo", "hurto", "accidente", "murió", "falleció",
+        "chocó", "detuvo", "arrestó", "capturó", "secuestro",
+        "homicidio", "asesinó", "mató", "herido",
+        # Deportes
+        "fútbol", "futbol", "balón de oro", "bola de oro", "gol de oro",
+        "medalla de oro", "copa de oro", "nba", "nfl", "champions",
+        "premier league", "liga endesa", "embajadora", "laureus",
+        # Entretenimiento / espectáculos
+        "premio platino", "premios platino", "spirit awards",
+        "golden globe", "bafta", "emmy", "grammy", "bts", "kpop",
+        "concierto", "gira", "festival de cine", "trayectoria artística",
+        "actor", "actriz", "serie televisiva", "temporada", "estreno",
+        # Política sin metales
+        "juez federal", "espía", "antisemita", "zelenski",
+        "congreso", "senado", "elecciones", "campaña electoral",
+        # Economía general sin metales
         "plazo fijo", "tasa de interés", "cepo al dólar", "dólar blue",
-        "flexibilizaciones del cepo", "acopio de granos", "granos",
-        "soja", "trigo", "maíz", "cosecha", "agro", "agricultura",
-        "ganadería", "monedas dejarán de circular", "retiro de monedas",
-        "de curso legal", "billete", "papel moneda",
-        "samsung", "xiaomi", "iphone", "apple", "android",
-        "receta", "cocina", "chef", "restaurante", "zara", "moda", "ropa",
-        "celular", "teléfono", "smartphone", "laptop", "tablet", "videojuego",
-        "corazón de oro", "golden gate", "edad de oro", "regla de oro",
-        "hora dorada", "color dorado", "color oro", "acabado dorado",
-        "aniversario de oro", "boda de oro", "boda de plata",
-        "disco de oro", "disco de plata", "récord de oro",
-        "movistar plus", "el corte inglés"
+        "granos", "soja", "trigo", "maíz", "cosecha", "ganadería",
+        "monedas dejarán de circular", "retiro de monedas",
+        "billete", "papel moneda", "tarjeta de crédito",
+        # Tecnología / moda / otros
+        "samsung", "xiaomi", "iphone", "apple", "receta", "cocina",
+        "zara", "moda", "ropa", "celular", "smartphone", "videojuego",
+        # Metáforas comunes
+        "corazón de oro", "edad de oro", "regla de oro",
+        "color dorado", "color oro", "boda de plata", "disco de oro",
+        "movistar plus", "el corte inglés", "biblioteca"
     ]
 
     noticias_validas = []
     titulos_vistos = set()
 
-    q_general = (
-        'oro OR plata OR esmeraldas OR diamantes OR platino OR paladio OR '
-        '"metales preciosos" OR "piedras preciosas" OR lingote OR '
-        '"precio del oro" OR "precio de la plata" OR "reservas de oro" OR '
-        '"cotización del oro" OR "mercado del oro" OR muzo OR marmato'
+    # CONSULTA 1 — Frases exactas del mercado de metales en español
+    q_mercado = (
+        '"precio del oro" OR "cotización del oro" OR "onza de oro" OR '
+        '"precio de la plata" OR "cotización de la plata" OR '
+        '"reservas de oro" OR "lingote de oro" OR "mercado del oro" OR '
+        '"minería de oro" OR "minería aurífera" OR "metales preciosos" OR '
+        '"precio del platino" OR "precio del paladio" OR '
+        'esmeraldas OR diamantes OR "piedras preciosas" OR muzo OR marmato'
     )
 
+    # CONSULTA 2 — Colombia y LATAM con frases de mercado
     q_latam = (
-        '(Colombia OR "América Latina" OR Venezuela OR Perú OR Ecuador OR '
-        'México OR Chile OR Brasil OR Bogotá OR Medellín OR "Banco de la República") AND '
-        '(oro OR plata OR esmeraldas OR diamantes OR platino OR minería OR '
-        '"metales preciosos" OR "piedras preciosas" OR muzo OR marmato OR chivor)'
+        '(Colombia OR Bogotá OR Medellín OR Venezuela OR Perú OR Ecuador OR '
+        'México OR Chile OR Brasil OR "Banco de la República") AND '
+        '("precio del oro" OR "precio de la plata" OR esmeraldas OR diamantes OR '
+        '"minería de oro" OR "minería aurífera" OR "metales preciosos" OR '
+        '"piedras preciosas" OR muzo OR marmato OR chivor OR lingote OR '
+        '"onza de oro" OR "reservas de oro")'
     )
 
-    for q in [q_general, q_latam]:
+    # FUENTES FINANCIERAS ESPECIALIZADAS en español (LATAM + España)
+    DOMINIOS_FINANCIEROS = (
+        "portafolio.co,larepublica.co,dinero.com,semana.com,"
+        "elcolombiano.com,eltiempo.com,caracol.com.co,"
+        "infobae.com,expansion.mx,eleconomista.com.mx,"
+        "elfinanciero.com.mx,df.cl,americaeconomia.com,"
+        "mining.com,kitco.com,mineria-pa.com"
+    )
+
+    consultas = [
+        # (query, usar_dominios_financieros)
+        (q_mercado, False),         # búsqueda amplia en todo español
+        (q_latam,   False),         # Colombia/LATAM sin restricción de dominio
+        (q_mercado, True),          # misma query pero solo en medios financieros
+    ]
+
+    for q, usar_dominios in consultas:
         if len(noticias_validas) >= 10:
             break
         params = {
@@ -185,10 +230,14 @@ def obtener_noticias():
             'apiKey': NEWS_KEY,
             'pageSize': 100
         }
+        if usar_dominios:
+            params['domains'] = DOMINIOS_FINANCIEROS
+
         try:
             res = requests.get("https://newsapi.org/v2/everything", params=params, timeout=15)
             data = res.json()
             if data.get('status') != 'ok':
+                print(f"[NOTICIAS] NewsAPI error: {data.get('message','')}")
                 continue
             for art in data.get('articles', []):
                 if len(noticias_validas) >= 10:
@@ -199,19 +248,23 @@ def obtener_noticias():
                 if not titulo or titulo == "[Removed]":
                     continue
                 texto_check = (titulo + " " + desc).lower()
-                if any(b in texto_check for b in PALABRAS_BASURA):
+                # FILTRO 1: eliminar basura
+                if any(b in texto_check for b in BASURA):
                     continue
-                if not any(m in texto_check for m in METALES_DIRECTOS):
+                # FILTRO 2: debe tener contexto real de mercado de metales/gemas
+                if not any(c in texto_check for c in CONTEXTO_MERCADO):
                     continue
+                # FILTRO 3: sin repetidos históricos
                 if gestionar_historial(titulo):
                     continue
+                # FILTRO 4: sin repetidos en esta tanda
                 clave = titulo[:50].lower()
                 if clave in titulos_vistos:
                     continue
                 titulos_vistos.add(clave)
                 noticias_validas.append({'title': titulo, 'url': url})
         except Exception as e:
-            print(f"[NOTICIAS] Error: {e}")
+            print(f"[NOTICIAS] Error en consulta: {e}")
 
     return noticias_validas
 
