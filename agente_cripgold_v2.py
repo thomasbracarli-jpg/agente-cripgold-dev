@@ -214,13 +214,31 @@ def tarea_precios(fecha):
 # ============================================================
 
 def normalizar_titulo(titulo):
-    """Elimina fechas y días del título para detectar artículos repetidos con distinta fecha."""
+    """
+    Normaliza un titulo para detectar duplicados:
+    - Elimina fechas y dias de la semana
+    - Elimina palabras muy comunes (stopwords)
+    - Devuelve las primeras palabras clave para comparar
+    """
     import re
+    STOPWORDS = {
+        'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'y', 'a',
+        'que', 'con', 'por', 'para', 'se', 'su', 'sus', 'al', 'es', 'son',
+        'ha', 'han', 'le', 'lo', 'todo', 'toda', 'este', 'esta', 'como',
+        'pero', 'mas', 'muy', 'ya', 'si', 'no', 'o', 'e', 'ni', 'sobre',
+        'entre', 'tras', 'ante', 'bajo', 'desde', 'hasta', 'hacia', 'sin',
+        'por', 'pro', 'vs'
+    }
     t = titulo.lower()
+    # Quitar fechas y dias
     t = re.sub(r'\d{1,2} de \w+ de \d{4}', '', t)
-    t = re.sub(r'(lunes|martes|miércoles|jueves|viernes|sábado|domingo)', '', t)
-    t = re.sub(r'\s+', ' ', t).strip()
-    return t[:60]
+    t = re.sub(r'(lunes|martes|miercoles|jueves|viernes|sabado|domingo)', '', t)
+    t = re.sub(r'\d+', '', t)
+    # Quitar puntuacion
+    t = re.sub(r'[^\w\s]', ' ', t)
+    # Filtrar stopwords y tomar las primeras 6 palabras clave
+    palabras = [p for p in t.split() if p not in STOPWORDS and len(p) > 3]
+    return ' '.join(palabras[:6])
 
 def obtener_noticias():
     """
@@ -230,8 +248,8 @@ def obtener_noticias():
     al menos una palabra clave de metales/gemas en el texto.
     """
     ahora = datetime.datetime.utcnow()
-    # 96h para maximizar volumen de noticias disponibles
-    hace_96h = (ahora - datetime.timedelta(hours=96)).strftime('%Y-%m-%dT%H:%M:%S')
+    # 36h: solo noticias de hoy y ayer — nada de dias anteriores
+    hace_36h = (ahora - datetime.timedelta(hours=36)).strftime('%Y-%m-%dT%H:%M:%S')
 
     # ── FRASES COMPUESTAS obligatorias ─────────────────────────────────────
     # Estas frases SOLO aparecen en noticias reales del mercado de metales.
@@ -380,7 +398,7 @@ def obtener_noticias():
             'q': q,
             'language': 'es',
             'sortBy': 'publishedAt',
-            'from': hace_96h,
+            'from': hace_36h,
             'apiKey': NEWS_KEY,
             'pageSize': 100
         }
