@@ -252,108 +252,127 @@ def obtener_noticias():
     ahora = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     hace_36h = ahora - datetime.timedelta(hours=36)
 
-    # ── FRASES COMPUESTAS obligatorias ─────────────────────────────────────
-    # Estas frases SOLO aparecen en noticias reales del mercado de metales.
-    # "precio del oro" jamás aparece en un artículo de Mar del Plata o Free Fire.
+    # ── CONTEXTO OBLIGATORIO ─────────────────────────────────────────────────
+    # Al menos UNA de estas frases debe aparecer en titulo+descripcion.
+    # Son lo suficientemente especificas para no dejar pasar deportes o farándula.
     CONTEXTO_MERCADO = [
-        "precio del oro", "cotización del oro", "onza de oro",
-        "mercado del oro", "reservas de oro", "lingote de oro",
-        "minería de oro", "minería aurífera", "oro físico",
-        "inversión en oro", "demanda de oro", "compra de oro",
+        # Oro — precio y mercado
+        "precio del oro", "cotización del oro", "onza de oro", "onza troy",
+        "mercado del oro", "reservas de oro", "lingote de oro", "lingotes de oro",
+        "minería de oro", "minería aurífera", "oro físico", "producción de oro",
+        "extracción de oro", "comercio de oro", "compra de oro",
+        "inversión en oro", "demanda de oro", "activo de oro",
+        "fondo de oro", "etf de oro", "futuros del oro", "precio spot del oro",
+        "récord del oro", "máximo histórico del oro", "repatriación de oro",
+        "minería ilegal de oro", "formalización minera", "ecodorado",
+        "compañía minera de oro", "producción aurífera",
+        # Plata, platino, paladio
         "precio de la plata", "cotización de la plata", "onza de plata",
-        "mercado de la plata", "lingote de plata", "plata física",
-        "inversión en plata", "demanda de plata",
+        "mercado de la plata", "lingote de plata", "inversión en plata",
         "precio del platino", "precio del paladio", "paladio",
-        "metales preciosos", "metal precioso",
-        "esmeralda", "esmeraldas",
-        "diamante industrial", "mercado de diamantes", "industria del diamante",
-        "mina de diamantes", "producción de diamantes",
-        "piedra preciosa", "piedras preciosas", "gema", "gemas",
-        "muzo", "marmato", "chivor",
-        "banco central compra oro", "brics oro", "reservas en oro",
-        "fondo de oro", "etf de oro", "futuros del oro",
-        # ── Frases adicionales verificadas en búsquedas reales ──
-        "bancos centrales compran oro", "bancos centrales y el oro",
-        "reservas de oro de los bancos", "brics y el oro",
-        "refugio de valor en oro", "oro como refugio",
-        "centenario de oro", "centenarios de oro",
-        "oro y plata como inversión", "oro y plata suben",
-        "metales del grupo platínico",
-        "diamantes sintéticos", "diamantes de laboratorio",
-        "esmeraldas colombianas", "mineros de esmeraldas",
-        "récord del oro", "máximo histórico del oro",
-        "precio spot del oro", "mercado de futuros del oro",
+        # Metales preciosos en general
+        "metales preciosos", "metal precioso", "activo refugio",
+        "valor refugio", "refugio de valor", "centenario de oro",
+        # Geopolítica con metales
+        "brics oro", "bancos centrales oro", "reserva en oro",
+        "banco central compra oro", "reservas de oro de los bancos",
+        # Esmeraldas y gemas
+        "esmeralda", "esmeraldas", "esmeraldas colombianas",
+        "muzo", "marmato", "chivor", "minería de esmeraldas",
+        "piedra preciosa", "piedras preciosas",
+        # Diamantes
+        "industria del diamante", "mercado de diamantes", "mina de diamantes",
+        "diamantes sintéticos", "diamantes de laboratorio", "producción de diamantes",
+        "crisis del diamante", "comercio de diamantes",
     ]
 
-    # ── ELIMINACIÓN INMEDIATA ────────────────────────────────────────────
+    # ── BASURA — ELIMINACIÓN INMEDIATA ───────────────────────────────────────
     BASURA = [
-        # Videojuegos (Free Fire, LoL, etc. usan oro/plata/diamante como rangos)
+        # Vietnam: publica diario "precio del oro en SJC" — irrelevante para Colombia
+        "precio del oro en sjc", "precio de las joyas de oro de 24k",
+        "anillos de oro de 9999", "precio del oro en vietnam",
+        "precio mundial del oro. - vietnam", "vnd por onza",
+        "sjc, precio del oro", "precio del oro de 24 quilates y precios mundiales",
+        # Videojuegos
         "free fire", "freefire", "códigos de hoy", "recompensas gratis",
         "league of legends", "clash of clans", "clash royale", "fortnite",
         "valorant", "pubg", "mobile legends", "honor of kings",
         "battle royale", "videojuego", "gaming", "gamer", "gameplay",
         "rango de oro", "rango de plata", "rango de diamante",
         "temporada de juego", "pase de batalla", "loot",
-        # Moda / farándula / joyería de celebridades
+        # Moda y farándula
         "broche de diamante", "collar de diamante", "pulsera de oro",
         "anillo de oro", "joyería de moda", "bisutería",
-        "lució", "llevó puesto", "vistió con", "portó un",
+        "lució", "llevó puesto", "vistió con",
         "reina camilla", "kate middleton", "meghan markle",
         "alfombra roja", "look de", "outfit", "tendencia de moda",
         "diseño de joyas", "colección de joyas", "joya real",
         "novia real", "boda real",
-        # Ciudades y ríos con "plata" u "oro"
-        "mar del plata", "río de la plata", "la plata",
-        # Crímenes y accidentes
-        "estafa", "robo", "hurto", "accidente", "murió", "falleció",
-        "chocó", "detuvo", "arrestó", "capturó", "secuestro",
-        "homicidio", "asesinó", "mató", "herido", "víctima",
+        # Geografía (ciudades con nombre de metal)
+        "mar del plata", "río de la plata",
+        # Crimen
+        "estafa", "robo", "hurto", "murió", "falleció",
+        "arrestó", "capturó", "secuestro", "homicidio", "asesinó", "víctima",
         # Deportes
-        "fútbol", "futbol", "balón de oro", "bola de oro", "gol de oro",
+        "fútbol", "futbol", "balón de oro", "gol de oro",
         "medalla de oro", "copa de oro", "nba", "nfl", "champions",
-        "premier league", "liga endesa", "embajadora", "laureus",
-        "atletismo", "ciclismo", "tenis", "boxeo",
+        "premier league", "atletismo", "ciclismo", "tenis", "boxeo",
         # Entretenimiento
-        "premio platino", "premios platino", "spirit awards",
+        "premio platino", "premios platino",
         "golden globe", "bafta", "emmy", "grammy", "bts", "kpop",
         "concierto", "gira musical", "festival de cine",
-        "trayectoria artística", "actor", "actriz", "estreno de", "película",
-        # Política sin metales
-        "juez federal", "espía rusa", "antisemita", "zelenski",
-        "congreso", "senado", "elecciones", "campaña electoral",
-        # Economía general
-        "plazo fijo", "tasa de interés", "cepo al dólar", "dólar blue",
+        "actor", "actriz", "estreno de", "película",
+        # Economía no relacionada
+        "plazo fijo", "cepo al dólar", "dólar blue",
         "granos", "soja", "trigo", "maíz", "cosecha", "ganadería",
-        "monedas dejarán de circular", "retiro de monedas",
         "billete", "papel moneda", "tarjeta de crédito",
         # Tecnología / otros
-        "samsung", "xiaomi", "iphone", "apple", "receta", "cocina",
-        "zara", "ropa", "celular", "smartphone", "biblioteca",
-        "movistar plus", "el corte inglés",
+        "samsung", "xiaomi", "iphone", "receta", "cocina",
+        "celular", "smartphone", "biblioteca",
         # Metáforas
         "corazón de oro", "edad de oro", "regla de oro",
-        "color dorado", "color oro", "boda de plata", "disco de oro",
+        "color dorado", "boda de plata", "disco de oro",
     ]
 
     noticias_validas = []
     titulos_vistos  = set()
 
-    # ── CONSULTAS GOOGLE NEWS RSS ────────────────────────────────────────────
-    # Mismas búsquedas que funcionan manualmente en Google — gratis, sin API key,
-    # cobertura completa de medios en español.
+    # ── CONSULTAS TEMÁTICAS — MAX 2 ARTÍCULOS POR TEMA ────────────────────
+    # Cada tupla: (query, max_articulos_por_consulta)
+    # Esto garantiza DIVERSIDAD: geopolítica, Colombia local, mercado global,
+    # diamantes, plata/platino, minería récord — nunca todo de un solo tema.
     CONSULTAS = [
-        # Precio del oro y la plata — noticias del mercado internacional
-        '"precio del oro" OR "cotizacion del oro" OR "onza de oro" OR "mercado del oro"',
-        # Precio de la plata, platino, paladio
-        '"precio de la plata" OR "cotizacion de la plata" OR "metales preciosos" OR "platino" OR "paladio"',
-        # Reservas, bancos centrales, BRICS — tendencias macro
-        '"reservas de oro" OR "bancos centrales oro" OR "brics oro" OR "lingote de oro" OR "oro fisico"',
-        # Esmeraldas colombianas y piedras preciosas
-        'esmeraldas Colombia OR "muzo" OR "marmato" OR "chivor" OR "esmeraldas colombianas"',
-        # Diamantes — mercado e industria
-        '"industria del diamante" OR "mercado de diamantes" OR "mina de diamantes" OR "diamantes sinteticos"',
-        # Mineria de oro en LATAM
-        '"mineria de oro" OR "mineria aurifera" OR "mineria de plata" OR "extraccion de oro"',
+        # TEMA 1: Geopolítica y guerra — cómo afectan al oro en el mundo
+        # (Francia, Oriente Medio, Trump aranceles, tensiones globales)
+        ('"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "geopolítica" OR '
+         '"Oriente Medio" OR "misil" OR "tensión" OR "repatriación")', 2),
+
+        # TEMA 2: Bancos centrales, BRICS, reservas — tendencias macro globales
+        ('"reservas de oro" OR "repatriación de oro" OR "bancos centrales" AND "oro" '
+         'OR "brics" AND "oro" OR "lingote de oro" OR "banco central" AND "oro"', 2),
+
+        # TEMA 3: Colombia local — Medellín, minería, esmeraldas, regulación
+        # (lo que pasa en el patio de casa)
+        ('(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia) AND '
+         '("oro" OR "esmeraldas" OR "minería" OR "muzo" OR "marmato" OR "chivor")', 2),
+
+        # TEMA 4: Cotización y precio — solo 2, no saturar
+        ('"precio del oro" OR "cotización del oro" OR "precio de la plata" '
+         'OR "cotización de la plata" OR "onza de oro"', 2),
+
+        # TEMA 5: Diamantes — crisis, laboratorio, cierre de minas
+        ('"industria del diamante" OR "diamantes de laboratorio" OR '
+         '"diamantes sintéticos" OR "crisis del diamante" OR "mina de diamantes"', 1),
+
+        # TEMA 6: Plata, platino, paladio — mercado e inversión
+        ('"mercado de la plata" OR "precio de la plata" OR "platino" OR "paladio" '
+         'OR "metales preciosos" AND ("inversión" OR "refugio" OR "rally" OR "récord")', 2),
+
+        # TEMA 7: Minería global — récords, grandes empresas, África, Asia
+        # (Zimbabue récord, Singapur hub, top 50 mineras, Aris Mining Colombia)
+        ('"producción de oro" AND ("récord" OR "record") OR '
+         '"compañía minera" AND "oro" OR "Zimbabue" AND "oro" OR '
+         '"Singapur" AND "oro" OR "minería aurífera" AND ("récord" OR "record")', 2),
     ]
 
     headers = {
@@ -364,12 +383,12 @@ def obtener_noticias():
         )
     }
 
-    for query in CONSULTAS:
+    for query, max_por_consulta in CONSULTAS:
         if len(noticias_validas) >= 10:
             break
+        encontrados_esta_consulta = 0
         try:
             q_encoded = urllib.parse.quote(query)
-            # hl=es-419 = Español Latinoamérica | gl=CO = Colombia | ceid=CO:es
             url_rss = (
                 f"https://news.google.com/rss/search"
                 f"?q={q_encoded}&hl=es-419&gl=CO&ceid=CO:es"
@@ -379,6 +398,8 @@ def obtener_noticias():
 
             for item in root.findall('.//item'):
                 if len(noticias_validas) >= 10:
+                    break
+                if encontrados_esta_consulta >= max_por_consulta:
                     break
 
                 titulo   = (item.findtext('title') or "").strip()
@@ -395,17 +416,17 @@ def obtener_noticias():
                     if fecha_pub < hace_36h:
                         continue
                 except Exception:
-                    pass  # si no se puede parsear la fecha, la incluimos igual
+                    pass  # si no se parsea la fecha, se incluye igual
 
                 texto_check = (titulo + " " + desc).lower()
 
-                # FILTRO 1: basura fuera
+                # FILTRO 1: basura fuera (Vietnam, juegos, moda, deporte)
                 if any(b in texto_check for b in BASURA):
                     continue
-                # FILTRO 2: debe tener contexto real de mercado de metales/gemas
+                # FILTRO 2: debe tener contexto real de metales/gemas
                 if not any(c in texto_check for c in CONTEXTO_MERCADO):
                     continue
-                # FILTRO 3: sin repetidos historicos (persiste entre ejecuciones via cache)
+                # FILTRO 3: sin repetidos historicos entre ejecuciones
                 if gestionar_historial(titulo):
                     continue
                 # FILTRO 4: sin duplicados en esta tanda (misma historia, distinta fuente)
@@ -415,10 +436,11 @@ def obtener_noticias():
                 titulos_vistos.add(clave)
 
                 noticias_validas.append({'title': titulo, 'url': link})
-                print(f"[NOTICIAS] OK: {titulo[:70]}")
+                encontrados_esta_consulta += 1
+                print(f"[NOTICIAS] [{encontrados_esta_consulta}/{max_por_consulta}] {titulo[:65]}")
 
         except Exception as e:
-            print(f"[NOTICIAS] Error en consulta '{query[:40]}': {e}")
+            print(f"[NOTICIAS] Error en consulta: {e}")
 
     print(f"[NOTICIAS] Total encontradas: {len(noticias_validas)}")
     return noticias_validas
