@@ -242,14 +242,15 @@ def normalizar_titulo(titulo):
 
 def obtener_noticias():
     """
-    Consulta NewsAPI solo en español.
-    Lógica: La query de NewsAPI ya filtra por tema. Luego el filtro local
-    elimina basura (premios, deportes, política) y exige que aparezca
-    al menos una palabra clave de metales/gemas en el texto.
+    Obtiene noticias desde Google News RSS — gratis, sin API key,
+    con la misma cobertura que una búsqueda manual en Google.
     """
-    ahora = datetime.datetime.utcnow()
-    # 36h: solo noticias de hoy y ayer — nada de dias anteriores
-    hace_36h = (ahora - datetime.timedelta(hours=36)).strftime('%Y-%m-%dT%H:%M:%S')
+    import xml.etree.ElementTree as ET
+    import urllib.parse
+    from email.utils import parsedate_to_datetime
+
+    ahora = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+    hace_36h = ahora - datetime.timedelta(hours=36)
 
     # ── FRASES COMPUESTAS obligatorias ─────────────────────────────────────
     # Estas frases SOLO aparecen en noticias reales del mercado de metales.
@@ -337,87 +338,65 @@ def obtener_noticias():
     noticias_validas = []
     titulos_vistos  = set()
 
-    # CONSULTA 1 — Frases exactas del mercado (no hay ambigüedad posible)
-    q_mercado = (
-        '"precio del oro" OR "cotización del oro" OR "onza de oro" OR '
-        '"precio de la plata" OR "cotización de la plata" OR '
-        '"reservas de oro" OR "lingote de oro" OR "mercado del oro" OR '
-        '"minería de oro" OR "minería aurífera" OR "metales preciosos" OR '
-        '"precio del platino" OR "precio del paladio" OR '
-        '"mercado de diamantes" OR "industria del diamante" OR '
-        'esmeraldas OR "piedras preciosas" OR muzo OR marmato OR chivor'
-    )
-
-    # CONSULTA 2 — Colombia y LATAM con frases de mercado
-    q_latam = (
-        '(Colombia OR Bogotá OR Medellín OR Venezuela OR Perú OR Ecuador OR '
-        'México OR Chile OR Brasil OR "Banco de la República" OR "América Latina") AND '
-        '("precio del oro" OR "precio de la plata" OR esmeraldas OR '
-        '"minería de oro" OR "minería aurífera" OR "metales preciosos" OR '
-        '"piedras preciosas" OR muzo OR marmato OR chivor OR '
-        '"lingote de oro" OR "onza de oro" OR "reservas de oro" OR '
-        '"mercado de diamantes")'
-    )
-
-    # CONSULTA 3 — Medios financieros especializados LATAM
-    # Dominios verificados: fuentes donde SÍ aparecen noticias del sector hoy
-    DOMINIOS = (
-        "portafolio.co,larepublica.co,dinero.com,semana.com,"
-        "elcolombiano.com,infobae.com,expansion.mx,"
-        "eleconomista.com.mx,df.cl,americaeconomia.com,"
-        "mineriaenlinea.com,bloomberglinea.com,sercolombiano.com,"
-        "dipromin.com,preciooro.com,kitco.com,investing.com"
-    )
-    q_financiero = (
-        '"precio del oro" OR "precio de la plata" OR esmeraldas OR '
-        '"metales preciosos" OR "piedras preciosas" OR '
-        '"mercado de diamantes" OR "minería de oro" OR muzo OR marmato'
-    )
-
-    # CONSULTA 4 — Macrotendencias: bancos centrales, BRICS, refugio, récords
-    q_macro = (
-        '"bancos centrales" AND ("oro" OR "plata" OR "metales preciosos") OR '
-        '"brics" AND "oro" OR '
-        '"refugio de valor" AND ("oro" OR "plata") OR '
-        '"récord del oro" OR "record del oro" OR "máximo histórico" AND "oro" OR '
-        '"diamantes sintéticos" OR "diamantes de laboratorio" OR '
-        '"esmeraldas colombianas" OR "mineros artesanales" AND "esmeraldas"'
-    )
-
-    consultas = [
-        (q_mercado,    None),
-        (q_latam,      None),
-        (q_financiero, DOMINIOS),
-        (q_macro,      None),
+    # ── CONSULTAS GOOGLE NEWS RSS ────────────────────────────────────────────
+    # Mismas búsquedas que funcionan manualmente en Google — gratis, sin API key,
+    # cobertura completa de medios en español.
+    CONSULTAS = [
+        # Precio del oro y la plata — noticias del mercado internacional
+        '"precio del oro" OR "cotizacion del oro" OR "onza de oro" OR "mercado del oro"',
+        # Precio de la plata, platino, paladio
+        '"precio de la plata" OR "cotizacion de la plata" OR "metales preciosos" OR "platino" OR "paladio"',
+        # Reservas, bancos centrales, BRICS — tendencias macro
+        '"reservas de oro" OR "bancos centrales oro" OR "brics oro" OR "lingote de oro" OR "oro fisico"',
+        # Esmeraldas colombianas y piedras preciosas
+        'esmeraldas Colombia OR "muzo" OR "marmato" OR "chivor" OR "esmeraldas colombianas"',
+        # Diamantes — mercado e industria
+        '"industria del diamante" OR "mercado de diamantes" OR "mina de diamantes" OR "diamantes sinteticos"',
+        # Mineria de oro en LATAM
+        '"mineria de oro" OR "mineria aurifera" OR "mineria de plata" OR "extraccion de oro"',
     ]
 
-    for q, dominios in consultas:
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36'
+        )
+    }
+
+    for query in CONSULTAS:
         if len(noticias_validas) >= 10:
             break
-        params = {
-            'q': q,
-            'language': 'es',
-            'sortBy': 'publishedAt',
-            'from': hace_36h,
-            'apiKey': NEWS_KEY,
-            'pageSize': 100
-        }
-        if dominios:
-            params['domains'] = dominios
         try:
-            res  = requests.get("https://newsapi.org/v2/everything", params=params, timeout=15)
-            data = res.json()
-            if data.get('status') != 'ok':
-                print(f"[NOTICIAS] NewsAPI: {data.get('message','')}")
-                continue
-            for art in data.get('articles', []):
+            q_encoded = urllib.parse.quote(query)
+            # hl=es-419 = Español Latinoamérica | gl=CO = Colombia | ceid=CO:es
+            url_rss = (
+                f"https://news.google.com/rss/search"
+                f"?q={q_encoded}&hl=es-419&gl=CO&ceid=CO:es"
+            )
+            res  = requests.get(url_rss, headers=headers, timeout=15)
+            root = ET.fromstring(res.content)
+
+            for item in root.findall('.//item'):
                 if len(noticias_validas) >= 10:
                     break
-                titulo = (art.get('title') or "").strip()
-                desc   = (art.get('description') or "").strip()
-                url    = art.get('url', "")
-                if not titulo or titulo == "[Removed]":
+
+                titulo   = (item.findtext('title') or "").strip()
+                link     = (item.findtext('link') or "").strip()
+                pub_date = (item.findtext('pubDate') or "").strip()
+                desc     = (item.findtext('description') or "").strip()
+
+                if not titulo or not link:
                     continue
+
+                # FILTRO 0: solo noticias de las ultimas 36h
+                try:
+                    fecha_pub = parsedate_to_datetime(pub_date)
+                    if fecha_pub < hace_36h:
+                        continue
+                except Exception:
+                    pass  # si no se puede parsear la fecha, la incluimos igual
+
                 texto_check = (titulo + " " + desc).lower()
 
                 # FILTRO 1: basura fuera
@@ -426,21 +405,22 @@ def obtener_noticias():
                 # FILTRO 2: debe tener contexto real de mercado de metales/gemas
                 if not any(c in texto_check for c in CONTEXTO_MERCADO):
                     continue
-                # FILTRO 3: sin repetidos históricos
+                # FILTRO 3: sin repetidos historicos (persiste entre ejecuciones via cache)
                 if gestionar_historial(titulo):
                     continue
-                # FILTRO 4: sin repetidos en esta tanda
-                # Normaliza fecha del título para evitar "mismo artículo, día diferente"
+                # FILTRO 4: sin duplicados en esta tanda (misma historia, distinta fuente)
                 clave = normalizar_titulo(titulo)
                 if clave in titulos_vistos:
                     continue
                 titulos_vistos.add(clave)
 
-                noticias_validas.append({'title': titulo, 'url': url})
+                noticias_validas.append({'title': titulo, 'url': link})
+                print(f"[NOTICIAS] OK: {titulo[:70]}")
 
         except Exception as e:
-            print(f"[NOTICIAS] Error: {e}")
+            print(f"[NOTICIAS] Error en consulta '{query[:40]}': {e}")
 
+    print(f"[NOTICIAS] Total encontradas: {len(noticias_validas)}")
     return noticias_validas
 
 
@@ -451,8 +431,8 @@ def tarea_noticias(fecha):
     if not arts:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
-            "No se encontraron noticias nuevas sobre metales y gemas en las últimas 48h.\n"
-            "Puede ser un día sin novedades o un problema con NewsAPI."
+            "No se encontraron noticias nuevas sobre metales y gemas en las ultimas 36h.\n"
+            "Puede ser un dia sin novedades o un problema de conectividad."
         )
         print("[NOTICIAS] Sin resultados válidos hoy.")
         return
