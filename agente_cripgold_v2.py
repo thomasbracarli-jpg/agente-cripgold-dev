@@ -1,6 +1,7 @@
 import requests
 import datetime
 import os
+import time
 
 # ============================================================
 #   AGENTE CRIPGOLD V2 — GitHub Actions Edition
@@ -180,9 +181,9 @@ def tarea_precios(fecha):
 
     if not gramo_cop:
         enviar_telegram(
-            "⚠️ <b>AGENTE CRIPGOLD — ERROR EN PRECIOS</b>\n"
-            "No se pudo obtener el precio del oro desde Yahoo Finance.\n"
-            "Verifica manualmente: <a href='https://finance.yahoo.com/quote/GC%3DF/'>Yahoo Finance Oro</a>"
+            "⚠️ AGENTE CRIPGOLD — ERROR EN PRECIOS\n"
+            "No se pudo obtener el precio del oro desde las fuentes.\n"
+            "Verifica manualmente en finance.yahoo.com"
         )
         print("[PRECIOS] ERROR: no se obtuvo precio.")
         return
@@ -240,6 +241,22 @@ def normalizar_titulo(titulo):
     palabras = [p for p in t.split() if p not in STOPWORDS and len(p) > 3]
     return ' '.join(palabras[:6])
 
+
+# ── DOMINIOS BLOQUEADOS — se verifican en el elemento <source> del RSS ───────
+# Vietnam.vn, por ejemplo, publica diario precios del oro en VND que no
+# son relevantes para Colombia aunque el título parezca legítimo.
+DOMINIOS_BLOQUEADOS_FUENTE = [
+    "vietnam.vn",
+    "vietstock.vn",
+    "vnexpress",
+    "thanhnien",
+    "tuoitre",
+    "baodautu",
+    "cafef.vn",
+    "tinnhanhchungkhoan",
+]
+
+
 def obtener_noticias():
     """
     Obtiene noticias desde Google News RSS — gratis, sin API key,
@@ -250,11 +267,11 @@ def obtener_noticias():
     from email.utils import parsedate_to_datetime
 
     ahora = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-    hace_36h = ahora - datetime.timedelta(hours=36)
+    # Ventana de 48h para capturar más artículos (36h era muy estricto)
+    hace_48h = ahora - datetime.timedelta(hours=48)
 
     # ── CONTEXTO OBLIGATORIO ─────────────────────────────────────────────────
     # Al menos UNA de estas frases debe aparecer en titulo+descripcion.
-    # Son lo suficientemente especificas para no dejar pasar deportes o farándula.
     CONTEXTO_MERCADO = [
         # Oro — precio y mercado
         "precio del oro", "cotización del oro", "onza de oro", "onza troy",
@@ -287,12 +304,18 @@ def obtener_noticias():
     ]
 
     # ── BASURA — ELIMINACIÓN INMEDIATA ───────────────────────────────────────
+    # IMPORTANTE: NO incluir "anillo de oro" ni "joyería de oro" porque
+    # CripGold es una joyería y esos temas SÍ pueden ser relevantes.
     BASURA = [
-        # Vietnam: publica diario "precio del oro en SJC" — irrelevante para Colombia
-        "precio del oro en sjc", "precio de las joyas de oro de 24k",
-        "anillos de oro de 9999", "precio del oro en vietnam",
-        "precio mundial del oro. - vietnam", "vnd por onza",
-        "sjc, precio del oro", "precio del oro de 24 quilates y precios mundiales",
+        # Vietnam: palabras específicas de sus reportes de precio local
+        "precio del oro en sjc",
+        "anillos de oro de 9999",
+        "precio del oro en vietnam",
+        "precio mundial del oro. - vietnam",
+        "vnd por onza",
+        "sjc, precio del oro",
+        "precio del oro de 24 quilates y precios mundiales",
+        "tael de oro",
         # Videojuegos
         "free fire", "freefire", "códigos de hoy", "recompensas gratis",
         "league of legends", "clash of clans", "clash royale", "fortnite",
@@ -301,8 +324,6 @@ def obtener_noticias():
         "rango de oro", "rango de plata", "rango de diamante",
         "temporada de juego", "pase de batalla", "loot",
         # Moda y farándula
-        "broche de diamante", "collar de diamante", "pulsera de oro",
-        "anillo de oro", "joyería de moda", "bisutería",
         "lució", "llevó puesto", "vistió con",
         "reina camilla", "kate middleton", "meghan markle",
         "alfombra roja", "look de", "outfit", "tendencia de moda",
@@ -311,8 +332,8 @@ def obtener_noticias():
         # Geografía (ciudades con nombre de metal)
         "mar del plata", "río de la plata",
         # Crimen
-        "estafa", "robo", "hurto", "murió", "falleció",
-        "arrestó", "capturó", "secuestro", "homicidio", "asesinó", "víctima",
+        "estafa", "robo de", "hurto de", "arrestaron", "capturaron",
+        "secuestro", "homicidio",
         # Deportes
         "fútbol", "futbol", "balón de oro", "gol de oro",
         "medalla de oro", "copa de oro", "nba", "nfl", "champions",
@@ -337,24 +358,20 @@ def obtener_noticias():
     noticias_validas = []
     titulos_vistos  = set()
 
-    # ── CONSULTAS TEMÁTICAS — MAX 2 ARTÍCULOS POR TEMA ────────────────────
+    # ── CONSULTAS TEMÁTICAS — MAX 3 ARTÍCULOS POR TEMA ────────────────────
     # Cada tupla: (query, max_articulos_por_consulta)
-    # Esto garantiza DIVERSIDAD: geopolítica, Colombia local, mercado global,
-    # diamantes, plata/platino, minería récord — nunca todo de un solo tema.
     CONSULTAS = [
         # TEMA 1: Geopolítica y guerra — cómo afectan al oro en el mundo
-        # (Francia, Oriente Medio, Trump aranceles, tensiones globales)
         ('"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "geopolítica" OR '
-         '"Oriente Medio" OR "misil" OR "tensión" OR "repatriación")', 2),
+         '"Oriente Medio" OR "misil" OR "tensión" OR "repatriación")', 3),
 
         # TEMA 2: Bancos centrales, BRICS, reservas — tendencias macro globales
         ('"reservas de oro" OR "repatriación de oro" OR "bancos centrales" AND "oro" '
-         'OR "brics" AND "oro" OR "lingote de oro" OR "banco central" AND "oro"', 2),
+         'OR "brics" AND "oro" OR "lingote de oro" OR "banco central" AND "oro"', 3),
 
         # TEMA 3: Colombia local — Medellín, minería, esmeraldas, regulación
-        # (lo que pasa en el patio de casa)
         ('(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia) AND '
-         '("oro" OR "esmeraldas" OR "minería" OR "muzo" OR "marmato" OR "chivor")', 2),
+         '("oro" OR "esmeraldas" OR "minería" OR "muzo" OR "marmato" OR "chivor")', 3),
 
         # TEMA 4: Cotización y precio — solo 2, no saturar
         ('"precio del oro" OR "cotización del oro" OR "precio de la plata" '
@@ -362,17 +379,20 @@ def obtener_noticias():
 
         # TEMA 5: Diamantes — crisis, laboratorio, cierre de minas
         ('"industria del diamante" OR "diamantes de laboratorio" OR '
-         '"diamantes sintéticos" OR "crisis del diamante" OR "mina de diamantes"', 1),
+         '"diamantes sintéticos" OR "crisis del diamante" OR "mina de diamantes"', 2),
 
         # TEMA 6: Plata, platino, paladio — mercado e inversión
         ('"mercado de la plata" OR "precio de la plata" OR "platino" OR "paladio" '
          'OR "metales preciosos" AND ("inversión" OR "refugio" OR "rally" OR "récord")', 2),
 
         # TEMA 7: Minería global — récords, grandes empresas, África, Asia
-        # (Zimbabue récord, Singapur hub, top 50 mineras, Aris Mining Colombia)
         ('"producción de oro" AND ("récord" OR "record") OR '
          '"compañía minera" AND "oro" OR "Zimbabue" AND "oro" OR '
          '"Singapur" AND "oro" OR "minería aurífera" AND ("récord" OR "record")', 2),
+
+        # TEMA 8 (RESCATE): consulta amplia si no llegamos a 8 artículos
+        # Se activa automáticamente si los temas anteriores no alcanzan.
+        ('"oro" OR "plata" OR "metales preciosos" OR "esmeraldas"', 3),
     ]
 
     headers = {
@@ -383,9 +403,14 @@ def obtener_noticias():
         )
     }
 
-    for query, max_por_consulta in CONSULTAS:
+    for i_consulta, (query, max_por_consulta) in enumerate(CONSULTAS):
         if len(noticias_validas) >= 10:
             break
+
+        # El tema 8 (rescate) solo corre si tenemos menos de 8 artículos
+        if i_consulta == 7 and len(noticias_validas) >= 8:
+            break
+
         encontrados_esta_consulta = 0
         try:
             q_encoded = urllib.parse.quote(query)
@@ -410,26 +435,41 @@ def obtener_noticias():
                 if not titulo or not link:
                     continue
 
-                # FILTRO 0: solo noticias de las ultimas 36h
+                # FILTRO 0: Bloquear fuentes vietnamitas (y similares) por source element
+                # Esto captura artículos como "Precio de la plata hoy, 13 de abril..."
+                # de Vietnam.vn que tienen títulos aparentemente legítimos.
+                source_elem = item.find('source')
+                if source_elem is not None:
+                    fuente_nombre = (source_elem.text or "").lower()
+                    fuente_url    = (source_elem.get('url') or "").lower()
+                    fuente_completa = fuente_nombre + " " + fuente_url
+                    if any(d in fuente_completa for d in DOMINIOS_BLOQUEADOS_FUENTE):
+                        print(f"[NOTICIAS] Fuente bloqueada ({fuente_nombre}): {titulo[:50]}")
+                        continue
+
+                # FILTRO 1: solo noticias de las ultimas 48h
                 try:
                     fecha_pub = parsedate_to_datetime(pub_date)
-                    if fecha_pub < hace_36h:
+                    if fecha_pub < hace_48h:
                         continue
                 except Exception:
                     pass  # si no se parsea la fecha, se incluye igual
 
                 texto_check = (titulo + " " + desc).lower()
 
-                # FILTRO 1: basura fuera (Vietnam, juegos, moda, deporte)
+                # FILTRO 2: basura fuera (Vietnam local, juegos, moda, deporte)
                 if any(b in texto_check for b in BASURA):
                     continue
-                # FILTRO 2: debe tener contexto real de metales/gemas
+
+                # FILTRO 3: debe tener contexto real de metales/gemas
                 if not any(c in texto_check for c in CONTEXTO_MERCADO):
                     continue
-                # FILTRO 3: sin repetidos historicos entre ejecuciones
+
+                # FILTRO 4: sin repetidos historicos entre ejecuciones
                 if gestionar_historial(titulo):
                     continue
-                # FILTRO 4: sin duplicados en esta tanda (misma historia, distinta fuente)
+
+                # FILTRO 5: sin duplicados en esta tanda (misma historia, distinta fuente)
                 clave = normalizar_titulo(titulo)
                 if clave in titulos_vistos:
                     continue
@@ -437,10 +477,13 @@ def obtener_noticias():
 
                 noticias_validas.append({'title': titulo, 'url': link})
                 encontrados_esta_consulta += 1
-                print(f"[NOTICIAS] [{encontrados_esta_consulta}/{max_por_consulta}] {titulo[:65]}")
+                print(f"[NOTICIAS] T{i_consulta+1} [{encontrados_esta_consulta}/{max_por_consulta}] {titulo[:65]}")
 
         except Exception as e:
-            print(f"[NOTICIAS] Error en consulta: {e}")
+            print(f"[NOTICIAS] Error en consulta {i_consulta+1}: {e}")
+
+        # Pequeña pausa entre consultas para no saturar Google
+        time.sleep(1)
 
     print(f"[NOTICIAS] Total encontradas: {len(noticias_validas)}")
     return noticias_validas
@@ -453,7 +496,7 @@ def tarea_noticias(fecha):
     if not arts:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
-            "No se encontraron noticias nuevas sobre metales y gemas en las ultimas 36h.\n"
+            "No se encontraron noticias nuevas sobre metales y gemas en las ultimas 48h.\n"
             "Puede ser un dia sin novedades o un problema de conectividad."
         )
         print("[NOTICIAS] Sin resultados válidos hoy.")
