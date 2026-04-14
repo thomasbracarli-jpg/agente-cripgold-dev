@@ -2,10 +2,10 @@ name: Agente CripGold — Diario 9AM
 
 on:
   # Cron en UTC — Colombia es UTC-5, entonces 9AM COL = 14:00 UTC
-  schedule:
-    - cron: '0 14 * * 1-5'   # Lunes a viernes a las 9AM (hora Colombia)
-    - cron: '0 14 * * 6'     # Sabado a las 9AM (hora Colombia)
-    - cron: '0 14 * * 0'     # Domingo a las 9AM (hora Colombia)
+  #schedule:
+    #   - cron: '0 14 * * 1-5'
+  #   - cron: '0 14 * * 6'
+  #   - cron: '0 14 * * 0'
 
   # Permite dispararlo manualmente desde GitHub (para pruebas)
   workflow_dispatch:
