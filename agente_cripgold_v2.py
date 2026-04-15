@@ -182,31 +182,66 @@ DOMINIOS_BLOQUEADOS_FUENTE = [
 ]
 
 BASURA = [
+    # ── VIETNAM y precios locales irrelevantes ──
     "precio del oro en sjc","anillos de oro de 9999","precio del oro en vietnam",
     "vnd por onza","sjc, precio del oro","tael de oro",
+
+    # ── VIDEOJUEGOS ──
     "free fire","freefire","códigos de hoy","recompensas gratis",
     "league of legends","clash of clans","fortnite","valorant","pubg",
     "mobile legends","rango de oro","rango de plata","rango de diamante",
-    "temporada de juego","pase de batalla",
+    "temporada de juego","pase de batalla","loot box",
+
+    # ── DEPORTES — medallas, copas, torneos, posiciones ──
+    "medalla de oro","medalla de plata","medalla de bronce",
+    "medallas de oro","medallas de plata","medallas de bronce",
+    "copa oro","copa de oro","copa america","copa del mundo","copa mundo",
+    "liga de naciones","liga de futbol","liga de fútbol",
+    "juegos olímpicos","juegos olimpicos","juegos panamericanos",
+    "juegos suramericanos","suramericanos de la juventud",
+    "juegos bolivarianos","juegos centroamericanos","juegos deportivos",
+    "balón de oro","bota de oro","guante de oro","gol de oro",
+    "podio","podio de oro","campeón de oro","campeonato",
+    "torneo de futbol","torneo de fútbol","mundial de futbol",
+    "nba","nfl","champions","premier league","laliga","serie a",
+    "atletismo","ciclismo","tenis","boxeo","natación","rugby",
+    "transmitirá netflix","transmitira netflix","liga de naciones en méxico",
+
+    # ── ENTRETENIMIENTO ──
+    "premio platino","premios platino","golden globe","bafta","emmy",
+    "grammy","bts","kpop","concierto","gira musical",
+    "actor","actriz","estreno de","película","serie de televisión",
+
+    # ── MODA Y FARÁNDULA ──
     "lució","llevó puesto","vistió con","reina camilla","kate middleton",
     "meghan markle","alfombra roja","look de","outfit","tendencia de moda",
     "colección de joyas","joya real","novia real","boda real",
-    "mar del plata","río de la plata",
-    "estafa","robo de","hurto de","arrestaron","capturaron","secuestro",
-    "fútbol","futbol","balón de oro","gol de oro","medalla de oro",
-    "copa de oro","nba","nfl","champions","premier league","atletismo",
-    "ciclismo","tenis","boxeo",
-    "premio platino","premios platino","golden globe","bafta","emmy",
-    "grammy","bts","kpop","concierto","gira musical",
-    "actor","actriz","estreno de","película",
+
+    # ── METÁFORAS Y EXPRESIONES — no son el metal ──
+    "corazón de oro","edad de oro","regla de oro","color dorado",
+    "boda de plata","disco de oro","voz de oro","manos de oro",
+    "toque de oro","momento de oro","oportunidad de oro",
+    "generación de oro","generacion de oro","era dorada","época dorada",
+    "época de oro","sello de oro","récord de oro",
+
+    # ── GEOGRAFÍA — nombres que no son el metal ──
+    "mar del plata","río de la plata","sierra de oro",
+
+    # ── CRIMEN sin contexto de metales ──
+    "estafa","robo de","hurto de","arrestaron","capturaron","secuestro","homicidio",
+
+    # ── ECONOMÍA NO RELACIONADA ──
     "plazo fijo","cepo al dólar","dólar blue",
     "granos","soja","trigo","maíz","cosecha","ganadería",
-    "samsung","xiaomi","iphone","receta","cocina","celular","smartphone",
-    "corazón de oro","edad de oro","regla de oro","color dorado",
-    "boda de plata","disco de oro",
-    # Evitar noticias de pueblos mineros sin contexto de gemas
+    "tarjeta de crédito","billete","papel moneda",
+
+    # ── TECNOLOGÍA / OTROS ──
+    "samsung","xiaomi","iphone","receta","cocina","celular","smartphone","biblioteca",
+
+    # ── PUEBLOS MINEROS sin contexto de gemas/metal ──
     "inundacion","inundaciones","escuela","colegio","carretera","vía terciaria",
     "acueducto","alcantarillado","alcalde","gobernación pide","comunidad pide",
+    "pide a muzo","pide a chivor","vías de acceso",
 ]
 
 # Contexto obligatorio para que una noticia pase como ORO
@@ -431,12 +466,13 @@ def tarea_noticias(fecha):
     contador = 1
     for cat_name, cat in CATEGORIAS.items():
         arts = resultados[cat_name]
-        if not arts:
-            continue
         msg += f"{cat['emoji']} <b>{cat['label']}</b>\n"
-        for art in arts:
-            msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
-            contador += 1
+        if not arts:
+            msg += "<i>Sin resultados obtenidos.</i>\n"
+        else:
+            for art in arts:
+                msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
+                contador += 1
         msg += "\n"
 
     msg += "🤖 <i>Agente CripGold — Investigación finalizada.</i>"
