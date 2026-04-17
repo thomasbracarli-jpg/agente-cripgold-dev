@@ -227,6 +227,23 @@ BASURA = [
     # ── GEOGRAFÍA — nombres que no son el metal ──
     "mar del plata","río de la plata","sierra de oro",
 
+    # ── DEPORTES ADICIONALES — patrones que escapan la lista principal ──
+    "ganar el oro","ganó el oro","se llevó el oro","conquistó el oro",
+    "el oro del mundial","el oro en el mundial","medalla dorada",
+    "mundial júnior","mundial junior","mundial de taekwondo","mundial de natación",
+    "mundial de atletismo","mundial de ciclismo","mundial de boxeo","mundial de judo",
+    "mundial de halterofilia","mundial de gimnasia","mundial de lucha","mundial de esgrima",
+    "tricampeón","bicampeón","pentacampeón","campeón del mundo de","subcampeón del mundo",
+    "se colgó la medalla","se colgó el oro","colgó medalla","ganó medalla",
+    "clasificó para","avanzó a semifinal","avanzó a la final","pasó a la final",
+    "juegos mundiales","juegos universitarios","juegos escolares",
+    "record mundial de","récord mundial de","nuevo récord en los",
+    "federación de","selección de","equipo nacional de","representó a",
+    "podio en","subió al podio","en el podio",
+    "taekwondo","judo","halterofilia","esgrima","tiro con arco","pentatlon",
+    "decatlon","heptatlón","maratón","triatlón","remo","canoa","vela","polo",
+    "hockey","voleibol","baloncesto","balonmano","waterpolo","handball",
+
     # ── CRIMEN sin contexto de metales ──
     "estafa","robo de","hurto de","arrestaron","capturaron","secuestro","homicidio",
 
@@ -335,7 +352,7 @@ def obtener_noticias():
     from email.utils import parsedate_to_datetime
 
     ahora    = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-    hace_48h = ahora - datetime.timedelta(hours=48)
+    hace_48h = ahora - datetime.timedelta(hours=72)  # ampliado 48h → 72h
 
     headers = {
         'User-Agent': (
@@ -382,14 +399,21 @@ def obtener_noticias():
         except Exception:
             pass
 
-        texto = (titulo + ' ' + desc).lower()
+        texto       = (titulo + ' ' + desc).lower()
+        titulo_solo = titulo.lower()  # para validaciones que deben pasar por el título
 
-        # Filtro 2 — basura
+        # Filtro 2 — basura (en título + descripción)
         if any(b in texto for b in BASURA):
             return None
 
+        # Filtro 2b — basura exclusiva del TÍTULO (captura frases cortas que la descripción contamina)
+        if any(b in titulo_solo for b in BASURA):
+            return None
+
         # Filtro 3 — contexto según categoría
-        if categoria == 'oro' and not any(c in texto for c in CONTEXTO_ORO):
+        # IMPORTANTE: para ORO se valida SOLO en el título para evitar falsos positivos
+        # por contenido de artículos relacionados en el RSS de Google News
+        if categoria == 'oro' and not any(c in titulo_solo for c in CONTEXTO_ORO):
             return None
         if categoria == 'esmeralda' and not any(c in texto for c in CONTEXTO_ESMERALDA):
             return None
@@ -468,7 +492,10 @@ def tarea_noticias(fecha):
         arts = resultados[cat_name]
         msg += f"{cat['emoji']} <b>{cat['label']}</b>\n"
         if not arts:
-            msg += "<i>Sin resultados obtenidos.</i>\n"
+            if cat_name == 'esmeralda':
+                msg += "<i>Sin noticias de mercado esta semana.</i>\n"
+            else:
+                msg += "<i>Sin resultados obtenidos.</i>\n"
         else:
             for art in arts:
                 msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
