@@ -3,8 +3,9 @@ import datetime
 import os
 import time
 # ============================================================
-#   AGENTE CRIPGOLD V3.1 — Solo español, 1 precio oro,
-#   Colombia prioritario, esmeraldas con contexto real
+#   AGENTE CRIPGOLD V3.2 — Búsquedas ampliadas:
+#   plata x2, diamantes x2, esmeraldas con minas,
+#   LatAm extendido, bancos centrales por país
 # ============================================================
 
 TOKEN         = os.environ.get("TELEGRAM_TOKEN", "8678579635:AAFbm5FMzbuDKYCnL_ttmoI0Zq5_ytRrYYM")
@@ -156,7 +157,7 @@ def tarea_precios(fecha):
     print(f"[PRECIOS] OK — gramo 24K: ${gramo_cop:,.0f} COP")
 
 # ============================================================
-#   TAREA 2 — NOTICIAS V3.1
+#   TAREA 2 — NOTICIAS V3.2
 # ============================================================
 
 def normalizar_titulo(titulo):
@@ -290,7 +291,7 @@ PALABRAS_PRECIO_ORO = [
 ]
 
 # ─────────────────────────────────────────────────────────────
-#   CUBETAS — Solo queries en ESPAÑOL
+#   CUBETAS — Solo queries en ESPAÑOL  (V3.2 — ampliado)
 # ─────────────────────────────────────────────────────────────
 CATEGORIAS = {
     'oro': {
@@ -298,38 +299,52 @@ CATEGORIAS = {
         'emoji': '🥇',
         'label': 'ORO',
         'queries': [
-            # 1. COLOMBIA Y LATAM — primera prioridad
-            '(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia OR Venezuela OR Perú OR México OR Argentina) AND ("oro" OR "minería aurífera" OR "producción de oro" OR "reservas de oro")',
+            # 1. COLOMBIA Y LATAM AMPLIADO — primera prioridad
+            '(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia OR Venezuela OR Perú OR México OR Argentina OR Ecuador OR Chile OR Bolivia OR Uruguay OR Brasil) AND ("oro" OR "minería aurífera" OR "producción de oro" OR "reservas de oro")',
             # 2. COLOMBIA específico — medios locales
             '("oro" OR "minería de oro") AND (Colombia OR "BanRep" OR "Banco de la República" OR "Minhacienda" OR "ANM")',
-            # 3. GEOPOLÍTICA — impacto en precio
-            '"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "Irán" OR "tensión" OR "repatriación" OR "sanciones" OR "Oriente Medio")',
-            # 4. BANCOS CENTRALES Y MACRO
-            '"reservas de oro" OR "repatriación de oro" OR ("banco central" AND "oro") OR ("brics" AND "oro") OR "lingote de oro"',
-            # 5. ANÁLISIS Y PRONÓSTICO — analistas
-            '"precio del oro" AND ("análisis" OR "pronóstico" OR "previsión" OR "resistencia" OR "soporte" OR "alcista" OR "bajista")',
-            # 6. MINERÍA E INVERSIÓN
-            '"producción de oro" OR "minería aurífera" OR ("inversión" AND "oro") OR "ETF de oro" OR "récord del oro"',
-            # 7. PRECIO COTIZACIÓN — limitado a 1 artículo (ver lógica en código)
+            # 3. BANCOS CENTRALES LATAM — reservas por país
+            '("banco central" OR "reservas internacionales") AND "oro" AND (Colombia OR Venezuela OR Perú OR México OR Argentina OR Ecuador OR Chile OR Bolivia)',
+            # 4. GEOPOLÍTICA — impacto en precio
+            '"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "Irán" OR "tensión" OR "repatriación" OR "sanciones" OR "Oriente Medio" OR "OPEP" OR "estrecho de Ormuz")',
+            # 5. BANCOS CENTRALES Y MACRO GLOBAL
+            '"reservas de oro" OR "repatriación de oro" OR ("banco central" AND "oro") OR ("brics" AND "oro") OR "lingote de oro" OR ("Turquía" AND "oro") OR ("China" AND "reservas de oro")',
+            # 6. ANÁLISIS Y PRONÓSTICO — analistas
+            '"precio del oro" AND ("análisis" OR "pronóstico" OR "previsión" OR "resistencia" OR "soporte" OR "alcista" OR "bajista" OR "objetivo" OR "meta")',
+            # 7. MINERÍA E INVERSIÓN
+            '"producción de oro" OR "minería aurífera" OR ("inversión" AND "oro") OR "ETF de oro" OR "récord del oro" OR "fondo de oro" OR "demanda de oro"',
+            # 8. PRECIO COTIZACIÓN — limitado a 1 artículo (ver lógica abajo)
             '"precio del oro hoy" OR "cotización del oro" OR "XAU/USD" OR "onza de oro" OR "precio spot del oro"',
         ],
     },
     'plata': {
-        'target': 1,
+        'target': 2,
         'emoji': '🥈',
         'label': 'PLATA',
         'queries': [
-            '"precio de la plata" OR "cotización de la plata" OR "XAG/USD" OR "mercado de la plata"',
-            '"plata" AND ("análisis" OR "rally" OR "caída" OR "máximo" OR "mínimo" OR "tendencia" OR "inversión")',
+            # 1. Precio y cotización
+            '"precio de la plata" OR "cotización de la plata" OR "XAG/USD" OR "mercado de la plata" OR "onza de plata"',
+            # 2. Análisis técnico y tendencia
+            '"plata" AND ("análisis" OR "rally" OR "caída" OR "máximo" OR "mínimo" OR "tendencia" OR "inversión" OR "resistencia" OR "soporte")',
+            # 3. Fundamentos — Silver Institute, déficit estructural
+            '"déficit de plata" OR "demanda de plata" OR "ETF de plata" OR "ratio oro plata" OR "Silver Institute" OR "Instituto de la Plata" OR "superávit de plata"',
+            # 4. Plata industrial — energía solar, electrónica
+            '"plata industrial" OR "demanda industrial de plata" OR "plata solar" OR "plata electrónica" OR ("plata" AND "energía renovable")',
         ],
     },
     'diamante': {
-        'target': 1,
+        'target': 2,
         'emoji': '💎',
         'label': 'DIAMANTES',
         'queries': [
-            '"mercado de diamantes" OR "industria del diamante" OR "diamantes de laboratorio" OR "De Beers" OR "crisis del diamante" OR "mina de diamantes"',
-            '"diamante" AND ("precio" OR "inversión" OR "sintético" OR "cierre" OR "récord" OR "tendencia" OR "mercado")',
+            # 1. Mercado general y productores
+            '"mercado de diamantes" OR "industria del diamante" OR "diamantes de laboratorio" OR "De Beers" OR "crisis del diamante" OR "mina de diamantes" OR "diamante sintético"',
+            # 2. Precio e inversión
+            '"diamante" AND ("precio" OR "inversión" OR "sintético" OR "cierre" OR "récord" OR "tendencia" OR "mercado" OR "demanda" OR "cotización")',
+            # 3. Subastas internacionales — Sotheby's, Christie's
+            '("Sotheby\'s" OR "Christie\'s" OR "Bonhams") AND ("diamante" OR "gema" OR "joya" OR "piedra preciosa")',
+            # 4. Récords y subastas de gemas
+            '"subasta de diamante" OR "diamante subasta" OR "récord de subasta" OR "diamante récord" OR "diamante más caro"',
         ],
     },
     'esmeralda': {
@@ -337,11 +352,16 @@ CATEGORIAS = {
         'emoji': '💚',
         'label': 'ESMERALDAS',
         'queries': [
-            # Consultas específicas de mercado — SIN nombres de pueblos sueltos
+            # 1. Sector formal colombiano
             '"esmeraldas colombianas" OR "sector esmeraldero" OR "Fedesmeraldas" OR "exportación de esmeraldas" OR "mercado de esmeraldas"',
+            # 2. Esmeralda + contexto de gema
             '"esmeralda" AND ("precio" OR "mercado" OR "exportación" OR "inversión" OR "quilate" OR "joya" OR "piedra preciosa" OR "gema")',
-            # Colombia con contexto de gema explícito
+            # 3. Colombia + gema explícito
             'Colombia AND ("esmeralda" OR "esmeraldas") AND ("precio" OR "mercado" OR "exportación" OR "quilate" OR "mina")',
+            # 4. Minas emblemáticas colombianas
+            '("Muzo" OR "Chivor" OR "Coscuez") AND ("esmeralda" OR "gema" OR "piedra preciosa" OR "mina" OR "exportación")',
+            # 5. Gemas colombianas — mercado internacional
+            '"gemas colombianas" OR "piedras preciosas colombianas" OR "esmeralda colombiana" OR (Colombia AND "gemas" AND "exportación")',
         ],
     },
 }
@@ -352,7 +372,7 @@ def obtener_noticias():
     from email.utils import parsedate_to_datetime
 
     ahora    = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-    hace_48h = ahora - datetime.timedelta(hours=72)  # ampliado 48h → 72h
+    hace_48h = ahora - datetime.timedelta(hours=72)  # ventana ampliada a 72h
 
     headers = {
         'User-Agent': (
@@ -392,7 +412,7 @@ def obtener_noticias():
             if any(d in fuente for d in DOMINIOS_BLOQUEADOS_FUENTE):
                 return None
 
-        # Filtro 1 — ventana 48h
+        # Filtro 1 — ventana 72h
         try:
             if parsedate_to_datetime(pub_date) < hace_48h:
                 return None
@@ -406,7 +426,7 @@ def obtener_noticias():
         if any(b in texto for b in BASURA):
             return None
 
-        # Filtro 2b — basura exclusiva del TÍTULO (captura frases cortas que la descripción contamina)
+        # Filtro 2b — basura exclusiva del TÍTULO
         if any(b in titulo_solo for b in BASURA):
             return None
 
@@ -477,7 +497,7 @@ def tarea_noticias(fecha):
     if total == 0:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
-            "No se encontraron noticias nuevas en las últimas 48h."
+            "No se encontraron noticias nuevas en las últimas 72h."
         )
         return
 
@@ -502,7 +522,7 @@ def tarea_noticias(fecha):
                 contador += 1
         msg += "\n"
 
-    msg += "🤖 <i>Agente CripGold — Investigación finalizada.</i>"
+    msg += "🤖 <i>Agente CripGold V3.2 — Investigación finalizada.</i>"
     enviar_telegram(msg)
     print(f"[NOTICIAS] OK — {total} noticias enviadas.")
 
@@ -512,11 +532,11 @@ def tarea_noticias(fecha):
 if __name__ == "__main__":
     fecha = datetime.datetime.now().strftime('%d/%m/%Y')
     print(f"\n{'='*50}")
-    print(f"  AGENTE CRIPGOLD V3.1 — {fecha}")
+    print(f"  AGENTE CRIPGOLD V3.2 — {fecha}")
     print(f"{'='*50}\n")
 
-    enviar_telegram(f"🤖 <b>Agente CripGold V3.1 — Iniciado</b>\n📅 {fecha}")
+    enviar_telegram(f"🤖 <b>Agente CripGold V3.2 — Iniciado</b>\n📅 {fecha}")
     tarea_precios(fecha)
     tarea_noticias(fecha)
-    enviar_telegram("✅ <b>Agente CripGold — Tareas completadas.</b>")
-    print("\n[DONE] Agente V3.1 finalizado.")
+    enviar_telegram("✅ <b>Agente CripGold V3.2 — Tareas completadas.</b>")
+    print("\n[DONE] Agente V3.2 finalizado.")
