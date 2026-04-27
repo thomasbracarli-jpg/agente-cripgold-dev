@@ -2,20 +2,23 @@ import requests
 import datetime
 import os
 import time
-# ============================================================
-#   AGENTE CRIPGOLD V3.2 — Búsquedas ampliadas:
-#   plata x2, diamantes x2, esmeraldas con minas,
-#   LatAm extendido, bancos centrales por país
-# ============================================================
 
-TOKEN         = os.environ.get("TELEGRAM_TOKEN", "8678579635:AAFbm5FMzbuDKYCnL_ttmoI0Zq5_ytRrYYM")
+# =====================================================================
+#   AGENTE CRIPGOLD V2 — GitHub Actions Edition
+#   Sin Flask. Corre de arriba a abajo, luego termina.
+# =====================================================================
+
+# --- CONFIGURACIÓN (en GitHub Actions van como Secrets) ---
+TOKEN        = os.environ.get("TELEGRAM_TOKEN", "8678579635:AAFbm5FMzbуDKYCnL_ttmoI0Zq5_ytRrYYM")
 DESTINATARIOS = os.environ.get("TELEGRAM_CHATS", "8526092375,5503549435,6915327599").split(",")
-NEWS_KEY      = os.environ.get("NEWS_API_KEY", "600c50b8de384fa88ba678ab4724d738")
+NEWS_KEY     = os.environ.get("NEWS_API_KEY", "600c50b8de384fa88ba678ab4724d738")
 
-# ============================================================
+# =====================================================================
 #   UTILIDADES
-# ============================================================
+# =====================================================================
+
 def enviar_telegram(texto):
+    """Envía un mensaje a todos los destinatarios."""
     for chat_id in DESTINATARIOS:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {
@@ -29,7 +32,31 @@ def enviar_telegram(texto):
         except Exception as e:
             print(f"[ERROR Telegram] chat {chat_id}: {e}")
 
+
+def enviar_documento_telegram(ruta_archivo, caption=""):
+    """Envía un archivo como documento a todos los destinatarios via Telegram."""
+    filename = os.path.basename(ruta_archivo)
+    for chat_id in DESTINATARIOS:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendDocument"
+        try:
+            with open(ruta_archivo, 'rb') as f:
+                files = {'document': (filename, f, 'text/html')}
+                data = {
+                    'chat_id': chat_id,
+                    'caption': caption,
+                    'parse_mode': 'HTML'
+                }
+                res = requests.post(url, files=files, data=data, timeout=30)
+                if res.status_code == 200:
+                    print(f"[REPORTE] Documento enviado a {chat_id} ✓")
+                else:
+                    print(f"[REPORTE] Error enviando a {chat_id}: {res.text[:120]}")
+        except Exception as e:
+            print(f"[REPORTE] Error enviando a {chat_id}: {e}")
+
+
 def gestionar_folio(tipo):
+    """Lleva un contador de envíos por tipo (precios / noticias)."""
     archivo = os.path.join(os.path.dirname(__file__), f"contador_{tipo}.txt")
     try:
         with open(archivo, "r") as f:
@@ -44,16 +71,20 @@ def gestionar_folio(tipo):
         pass
     return nuevo
 
+
 def gestionar_historial(titulo):
+    """Evita repetir noticias ya enviadas (guarda últimas 300)."""
     archivo = os.path.join(os.path.dirname(__file__), "historial_noticias.txt")
     try:
         with open(archivo, "r") as f:
             historial = f.read().splitlines()
     except:
         historial = []
+
     clave = titulo[:60].strip()
     if clave in historial:
-        return True
+        return True  # ya fue enviada
+
     historial.append(clave)
     try:
         with open(archivo, "w") as f:
@@ -62,10 +93,16 @@ def gestionar_historial(titulo):
         pass
     return False
 
-# ============================================================
+
+# =====================================================================
 #   TAREA 1 — PRECIOS DE COMPRA CRIPGOLD
-# ============================================================
+# =====================================================================
+
 def obtener_precio_oro_cop():
+    """
+    Obtiene el precio spot del oro en USD desde goldprice.org (misma fuente
+    que usa Thomas manualmente) y lo convierte a COP con la TRM de Yahoo Finance.
+    """
     headers = {
         'User-Agent': (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -74,52 +111,71 @@ def obtener_precio_oro_cop():
         ),
         'Accept': 'application/json'
     }
+
     oro_usd = None
+
+    # FUENTE 1: goldprice.org — misma fuente que usa Thomas manualmente
     try:
-        res = requests.get("https://data-asg.goldprice.org/dbXRates/USD", headers=headers, timeout=12)
-        if res.status_code == 200:
-            p = res.json()['items'][0]['xauPrice']
-            if p and float(p) > 100:
-                oro_usd = float(p)
-                print(f"[PRECIOS] goldprice.org: ${oro_usd}")
+        url_gp = "https://data-asg.goldprice.org/dbXRates/USD"
+        res_gp = requests.get(url_gp, headers=headers, timeout=12)
+        if res_gp.status_code == 200:
+            data_gp = res_gp.json()
+            precio_gp = data_gp['items'][0]['xauPrice']
+            if precio_gp and float(precio_gp) > 100:
+                oro_usd = float(precio_gp)
+                print(f"[PRECIOS] Precio obtenido desde goldprice.org: ${oro_usd}")
     except Exception as e:
         print(f"[PRECIOS] goldprice.org falló: {e}")
 
+    # FUENTE 2: Yahoo Finance como respaldo si goldprice.org no responde
     if not oro_usd:
         for ticker in ["XAUUSD=X", "GC=F"]:
             try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
-                res = requests.get(url, headers=headers, timeout=12)
-                if res.status_code == 200:
-                    p = res.json()['chart']['result'][0]['meta']['regularMarketPrice']
-                    if p and float(p) > 100:
-                        oro_usd = float(p)
-                        print(f"[PRECIOS] Yahoo ({ticker}): ${oro_usd}")
+                url_yf = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
+                res_yf = requests.get(url_yf, headers=headers, timeout=12)
+                if res_yf.status_code == 200:
+                    precio_yf = res_yf.json()['chart']['result'][0]['meta']['regularMarketPrice']
+                    if precio_yf and float(precio_yf) > 100:
+                        oro_usd = float(precio_yf)
+                        print(f"[PRECIOS] Precio obtenido desde Yahoo Finance ({ticker}): ${oro_usd}")
                         break
             except:
                 continue
 
+    # TRM: USD a COP desde Yahoo Finance
     usd_cop = None
     try:
-        res = requests.get("https://query1.finance.yahoo.com/v8/finance/chart/COP=X?interval=1d&range=5d", headers=headers, timeout=12)
-        if res.status_code == 200:
-            usd_cop = float(res.json()['chart']['result'][0]['meta']['regularMarketPrice'])
+        url_cop = "https://query1.finance.yahoo.com/v8/finance/chart/COP=X?interval=1d&range=5d"
+        res_cop = requests.get(url_cop, headers=headers, timeout=12)
+        if res_cop.status_code == 200:
+            usd_cop = float(res_cop.json()['chart']['result'][0]['meta']['regularMarketPrice'])
     except:
         pass
 
     if oro_usd and usd_cop:
-        return oro_usd, usd_cop, (oro_usd / 31.1034768) * usd_cop
+        gramo_cop = (oro_usd / 31.1034768) * usd_cop
+        return oro_usd, usd_cop, gramo_cop
     return None, None, None
 
+
 def construir_mensaje_precios(base_gramo, porcentaje, folio, fecha):
+    """
+    Genera el bloque de texto de precios para un porcentaje dado.
+    porcentaje: 0.83 o 0.84
+    """
     base = base_gramo * porcentaje
     etiqueta = f"{int(porcentaje * 100)}%"
-    def f(v):  return f"{int(v):,.0f}".replace(",", ".")
-    def fr(v): return f"{int(round(v / 1000) * 1000):,.0f}".replace(",", ".")
-    return (
+
+    def f(v):
+        return f"{int(v):,.0f}".replace(",", ".")
+
+    def fr(v):
+        return f"{int(round(v / 1000) * 1000):,.0f}".replace(",", ".")
+
+    msg = (
         f"💰 <b>PRECIOS DE COMPRA CRIPGOLD</b> 💰\n"
         f"📅 <i>{fecha}    #{folio} — Base {etiqueta}</i>\n"
-        f"➖➖➖➖➖➖➖➖➖➖\n\n"
+        f"❖❖❖❖❖❖❖❖❖❖\n\n"
         f"<b>ORO</b>  <i>(precios exactos)</i>\n"
         f"BASE {f(base)}\n\n"
         f"18K ITALY    — {f(base * 0.74)}\n"
@@ -136,243 +192,229 @@ def construir_mensaje_precios(base_gramo, porcentaje, folio, fecha):
         f"15K          — {fr(base * 0.62)}\n"
         f"14K          — {fr(base * 0.575)}\n"
         f"10K          — {fr(base * 0.40)}\n"
-        f"➖➖➖➖➖➖➖➖➖➖"
+        f"❖❖❖❖❖❖❖❖❖❖"
     )
+    return msg
+
 
 def tarea_precios(fecha):
     print("[PRECIOS] Iniciando...")
     oro_usd, usd_cop, gramo_cop = obtener_precio_oro_cop()
+
     if not gramo_cop:
-        enviar_telegram("⚠️ AGENTE CRIPGOLD — ERROR EN PRECIOS\nVerifica manualmente en finance.yahoo.com")
-        return
+        enviar_telegram(
+            "⚠️ AGENTE CRIPGOLD — ERROR EN PRECIOS\n"
+            "No se pudo obtener el precio del oro desde las fuentes.\n"
+            "Verifica manualmente en finance.yahoo.com"
+        )
+        print("[PRECIOS] ERROR: no se obtuvo precio.")
+        return None, None, None
+
     folio = gestionar_folio("precios")
-    enviar_telegram(
+
+    # Encabezado con datos de mercado
+    encabezado = (
         f"📊 <b>Mercado hoy:</b>\n"
         f"🥇 Oro: <b>${oro_usd:,.2f} USD/oz</b>\n"
         f"💵 TRM: <b>${usd_cop:,.2f} COP/USD</b>\n"
-        f"⚖️ Gramo 24K: <b>${gramo_cop:,.0f} COP</b>"
+        f"⚡️ Gramo 24K: <b>${gramo_cop:,.0f} COP</b>"
     )
-    enviar_telegram(construir_mensaje_precios(gramo_cop, 0.83, folio, fecha))
-    enviar_telegram(construir_mensaje_precios(gramo_cop, 0.84, folio, fecha))
-    print(f"[PRECIOS] OK — gramo 24K: ${gramo_cop:,.0f} COP")
+    enviar_telegram(encabezado)
 
-# ============================================================
-#   TAREA 2 — NOTICIAS V3.2
-# ============================================================
+    # Tanda 1 — Base al 83%
+    msg_83 = construir_mensaje_precios(gramo_cop, 0.83, folio, fecha)
+    enviar_telegram(msg_83)
+
+    # Tanda 2 — Base al 84%
+    msg_84 = construir_mensaje_precios(gramo_cop, 0.84, folio, fecha)
+    enviar_telegram(msg_84)
+
+    print(f"[PRECIOS] OK — gramo 24K: ${gramo_cop:,.0f} COP")
+    return oro_usd, usd_cop, gramo_cop
+
+
+# =====================================================================
+#   TAREA 2 — NOTICIAS MERCADO DE METALES Y GEMAS
+# =====================================================================
 
 def normalizar_titulo(titulo):
+    """
+    Normaliza un titulo para detectar duplicados:
+    - Elimina fechas y dias de la semana
+    - Elimina palabras muy comunes (stopwords)
+    - Devuelve las primeras palabras clave para comparar
+    """
     import re
     STOPWORDS = {
-        'el','la','los','las','un','una','de','del','en','y','a','que','con',
-        'por','para','se','su','sus','al','es','son','ha','han','le','lo',
-        'todo','toda','este','esta','como','pero','mas','muy','ya','si','no',
-        'o','e','ni','sobre','entre','tras','ante','bajo','desde','hasta',
-        'hacia','sin','pro','vs'
+        'el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'en', 'y', 'a',
+        'que', 'con', 'por', 'para', 'se', 'su', 'sus', 'al', 'es', 'son',
+        'ha', 'han', 'le', 'lo', 'todo', 'toda', 'este', 'esta', 'como',
+        'pero', 'mas', 'muy', 'ya', 'si', 'no', 'o', 'e', 'ni', 'sobre',
+        'entre', 'tras', 'ante', 'bajo', 'desde', 'hasta', 'hacia', 'sin',
+        'por', 'pro', 'vs'
     }
     t = titulo.lower()
+    # Quitar fechas y dias
     t = re.sub(r'\d{1,2} de \w+ de \d{4}', '', t)
     t = re.sub(r'(lunes|martes|miercoles|jueves|viernes|sabado|domingo)', '', t)
     t = re.sub(r'\d+', '', t)
+    # Quitar puntuacion
     t = re.sub(r'[^\w\s]', ' ', t)
+    # Filtrar stopwords y tomar las primeras 6 palabras clave
     palabras = [p for p in t.split() if p not in STOPWORDS and len(p) > 3]
     return ' '.join(palabras[:6])
 
+
+# ── DOMINIOS BLOQUEADOS — se verifican en el elemento <source> del RSS ──────
+# Vietnam.vn, por ejemplo, publica diario precios del oro en VND que no
+# son relevantes para Colombia aunque el título parezca legítimo.
 DOMINIOS_BLOQUEADOS_FUENTE = [
-    "vietnam.vn","vietstock.vn","vnexpress","thanhnien",
-    "tuoitre","baodautu","cafef.vn","tinnhanhchungkhoan",
+    "vietnam.vn",
+    "vietstock.vn",
+    "vnexpress",
+    "thanhnien",
+    "tuoitre",
+    "baodautu",
+    "cafef.vn",
+    "tinnhanhchungkhoan",
 ]
 
-BASURA = [
-    # ── VIETNAM y precios locales irrelevantes ──
-    "precio del oro en sjc","anillos de oro de 9999","precio del oro en vietnam",
-    "vnd por onza","sjc, precio del oro","tael de oro",
-
-    # ── VIDEOJUEGOS ──
-    "free fire","freefire","códigos de hoy","recompensas gratis",
-    "league of legends","clash of clans","fortnite","valorant","pubg",
-    "mobile legends","rango de oro","rango de plata","rango de diamante",
-    "temporada de juego","pase de batalla","loot box",
-
-    # ── DEPORTES — medallas, copas, torneos, posiciones ──
-    "medalla de oro","medalla de plata","medalla de bronce",
-    "medallas de oro","medallas de plata","medallas de bronce",
-    "copa oro","copa de oro","copa america","copa del mundo","copa mundo",
-    "liga de naciones","liga de futbol","liga de fútbol",
-    "juegos olímpicos","juegos olimpicos","juegos panamericanos",
-    "juegos suramericanos","suramericanos de la juventud",
-    "juegos bolivarianos","juegos centroamericanos","juegos deportivos",
-    "balón de oro","bota de oro","guante de oro","gol de oro",
-    "podio","podio de oro","campeón de oro","campeonato",
-    "torneo de futbol","torneo de fútbol","mundial de futbol",
-    "nba","nfl","champions","premier league","laliga","serie a",
-    "atletismo","ciclismo","tenis","boxeo","natación","rugby",
-    "transmitirá netflix","transmitira netflix","liga de naciones en méxico",
-
-    # ── ENTRETENIMIENTO ──
-    "premio platino","premios platino","golden globe","bafta","emmy",
-    "grammy","bts","kpop","concierto","gira musical",
-    "actor","actriz","estreno de","película","serie de televisión",
-
-    # ── MODA Y FARÁNDULA ──
-    "lució","llevó puesto","vistió con","reina camilla","kate middleton",
-    "meghan markle","alfombra roja","look de","outfit","tendencia de moda",
-    "colección de joyas","joya real","novia real","boda real",
-
-    # ── METÁFORAS Y EXPRESIONES — no son el metal ──
-    "corazón de oro","edad de oro","regla de oro","color dorado",
-    "boda de plata","disco de oro","voz de oro","manos de oro",
-    "toque de oro","momento de oro","oportunidad de oro",
-    "generación de oro","generacion de oro","era dorada","época dorada",
-    "época de oro","sello de oro","récord de oro",
-
-    # ── GEOGRAFÍA — nombres que no son el metal ──
-    "mar del plata","río de la plata","sierra de oro",
-
-    # ── DEPORTES ADICIONALES — patrones que escapan la lista principal ──
-    "ganar el oro","ganó el oro","se llevó el oro","conquistó el oro",
-    "el oro del mundial","el oro en el mundial","medalla dorada",
-    "mundial júnior","mundial junior","mundial de taekwondo","mundial de natación",
-    "mundial de atletismo","mundial de ciclismo","mundial de boxeo","mundial de judo",
-    "mundial de halterofilia","mundial de gimnasia","mundial de lucha","mundial de esgrima",
-    "tricampeón","bicampeón","pentacampeón","campeón del mundo de","subcampeón del mundo",
-    "se colgó la medalla","se colgó el oro","colgó medalla","ganó medalla",
-    "clasificó para","avanzó a semifinal","avanzó a la final","pasó a la final",
-    "juegos mundiales","juegos universitarios","juegos escolares",
-    "record mundial de","récord mundial de","nuevo récord en los",
-    "federación de","selección de","equipo nacional de","representó a",
-    "podio en","subió al podio","en el podio",
-    "taekwondo","judo","halterofilia","esgrima","tiro con arco","pentatlon",
-    "decatlon","heptatlón","maratón","triatlón","remo","canoa","vela","polo",
-    "hockey","voleibol","baloncesto","balonmano","waterpolo","handball",
-
-    # ── CRIMEN sin contexto de metales ──
-    "estafa","robo de","hurto de","arrestaron","capturaron","secuestro","homicidio",
-
-    # ── ECONOMÍA NO RELACIONADA ──
-    "plazo fijo","cepo al dólar","dólar blue",
-    "granos","soja","trigo","maíz","cosecha","ganadería",
-    "tarjeta de crédito","billete","papel moneda",
-
-    # ── TECNOLOGÍA / OTROS ──
-    "samsung","xiaomi","iphone","receta","cocina","celular","smartphone","biblioteca",
-
-    # ── PUEBLOS MINEROS sin contexto de gemas/metal ──
-    "inundacion","inundaciones","escuela","colegio","carretera","vía terciaria",
-    "acueducto","alcantarillado","alcalde","gobernación pide","comunidad pide",
-    "pide a muzo","pide a chivor","vías de acceso",
-]
-
-# Contexto obligatorio para que una noticia pase como ORO
-CONTEXTO_ORO = [
-    "precio del oro","cotización del oro","onza de oro","onza troy",
-    "mercado del oro","reservas de oro","lingote de oro","lingotes de oro",
-    "minería de oro","minería aurífera","oro físico","producción de oro",
-    "inversión en oro","demanda de oro","activo de oro","fondo de oro",
-    "etf de oro","futuros del oro","precio spot del oro","récord del oro",
-    "máximo histórico del oro","repatriación de oro","minería ilegal de oro",
-    "brics","bancos centrales","reserva en oro","banco central",
-    "xau","gold price","gold market",
-]
-
-# Contexto obligatorio para ESMERALDAS — debe hablar de la gema, no del pueblo
-CONTEXTO_ESMERALDA = [
-    "esmeralda","esmeraldas","piedra preciosa","piedras preciosas",
-    "gema","gemas","joya","joyas","quilate","exportación de esmeraldas",
-    "mercado de esmeraldas","precio de esmeraldas","sector esmeraldero",
-    "fedesmeraldas","minería de esmeraldas","mina de esmeraldas",
-    "esmeralda colombiana","esmeraldas colombianas",
-]
-
-# Palabras que indican "noticia de precio" para limitar a 1 en ORO
-PALABRAS_PRECIO_ORO = [
-    "precio del oro","cotización del oro","xau/usd","precio spot",
-    "precio de la onza","sube el oro","baja el oro","cae el oro",
-    "onza de oro","precio hoy","cotización hoy",
-]
-
-# ─────────────────────────────────────────────────────────────
-#   CUBETAS — Solo queries en ESPAÑOL  (V3.2 — ampliado)
-# ─────────────────────────────────────────────────────────────
-CATEGORIAS = {
-    'oro': {
-        'target': 7,
-        'emoji': '🥇',
-        'label': 'ORO',
-        'queries': [
-            # 1. COLOMBIA Y LATAM AMPLIADO — primera prioridad
-            '(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia OR Venezuela OR Perú OR México OR Argentina OR Ecuador OR Chile OR Bolivia OR Uruguay OR Brasil) AND ("oro" OR "minería aurífera" OR "producción de oro" OR "reservas de oro")',
-            # 2. COLOMBIA específico — medios locales
-            '("oro" OR "minería de oro") AND (Colombia OR "BanRep" OR "Banco de la República" OR "Minhacienda" OR "ANM")',
-            # 3. BANCOS CENTRALES LATAM — reservas por país
-            '("banco central" OR "reservas internacionales") AND "oro" AND (Colombia OR Venezuela OR Perú OR México OR Argentina OR Ecuador OR Chile OR Bolivia)',
-            # 4. GEOPOLÍTICA — impacto en precio
-            '"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "Irán" OR "tensión" OR "repatriación" OR "sanciones" OR "Oriente Medio" OR "OPEP" OR "estrecho de Ormuz")',
-            # 5. BANCOS CENTRALES Y MACRO GLOBAL
-            '"reservas de oro" OR "repatriación de oro" OR ("banco central" AND "oro") OR ("brics" AND "oro") OR "lingote de oro" OR ("Turquía" AND "oro") OR ("China" AND "reservas de oro")',
-            # 6. ANÁLISIS Y PRONÓSTICO — analistas
-            '"precio del oro" AND ("análisis" OR "pronóstico" OR "previsión" OR "resistencia" OR "soporte" OR "alcista" OR "bajista" OR "objetivo" OR "meta")',
-            # 7. MINERÍA E INVERSIÓN
-            '"producción de oro" OR "minería aurífera" OR ("inversión" AND "oro") OR "ETF de oro" OR "récord del oro" OR "fondo de oro" OR "demanda de oro"',
-            # 8. PRECIO COTIZACIÓN — limitado a 1 artículo (ver lógica abajo)
-            '"precio del oro hoy" OR "cotización del oro" OR "XAU/USD" OR "onza de oro" OR "precio spot del oro"',
-        ],
-    },
-    'plata': {
-        'target': 2,
-        'emoji': '🥈',
-        'label': 'PLATA',
-        'queries': [
-            # 1. Precio y cotización
-            '"precio de la plata" OR "cotización de la plata" OR "XAG/USD" OR "mercado de la plata" OR "onza de plata"',
-            # 2. Análisis técnico y tendencia
-            '"plata" AND ("análisis" OR "rally" OR "caída" OR "máximo" OR "mínimo" OR "tendencia" OR "inversión" OR "resistencia" OR "soporte")',
-            # 3. Fundamentos — Silver Institute, déficit estructural
-            '"déficit de plata" OR "demanda de plata" OR "ETF de plata" OR "ratio oro plata" OR "Silver Institute" OR "Instituto de la Plata" OR "superávit de plata"',
-            # 4. Plata industrial — energía solar, electrónica
-            '"plata industrial" OR "demanda industrial de plata" OR "plata solar" OR "plata electrónica" OR ("plata" AND "energía renovable")',
-        ],
-    },
-    'diamante': {
-        'target': 2,
-        'emoji': '💎',
-        'label': 'DIAMANTES',
-        'queries': [
-            # 1. Mercado general y productores
-            '"mercado de diamantes" OR "industria del diamante" OR "diamantes de laboratorio" OR "De Beers" OR "crisis del diamante" OR "mina de diamantes" OR "diamante sintético"',
-            # 2. Precio e inversión
-            '"diamante" AND ("precio" OR "inversión" OR "sintético" OR "cierre" OR "récord" OR "tendencia" OR "mercado" OR "demanda" OR "cotización")',
-            # 3. Subastas internacionales — Sotheby's, Christie's
-            '("Sotheby\'s" OR "Christie\'s" OR "Bonhams") AND ("diamante" OR "gema" OR "joya" OR "piedra preciosa")',
-            # 4. Récords y subastas de gemas
-            '"subasta de diamante" OR "diamante subasta" OR "récord de subasta" OR "diamante récord" OR "diamante más caro"',
-        ],
-    },
-    'esmeralda': {
-        'target': 1,
-        'emoji': '💚',
-        'label': 'ESMERALDAS',
-        'queries': [
-            # 1. Sector formal colombiano
-            '"esmeraldas colombianas" OR "sector esmeraldero" OR "Fedesmeraldas" OR "exportación de esmeraldas" OR "mercado de esmeraldas"',
-            # 2. Esmeralda + contexto de gema
-            '"esmeralda" AND ("precio" OR "mercado" OR "exportación" OR "inversión" OR "quilate" OR "joya" OR "piedra preciosa" OR "gema")',
-            # 3. Colombia + gema explícito
-            'Colombia AND ("esmeralda" OR "esmeraldas") AND ("precio" OR "mercado" OR "exportación" OR "quilate" OR "mina")',
-            # 4. Minas emblemáticas colombianas
-            '("Muzo" OR "Chivor" OR "Coscuez") AND ("esmeralda" OR "gema" OR "piedra preciosa" OR "mina" OR "exportación")',
-            # 5. Gemas colombianas — mercado internacional
-            '"gemas colombianas" OR "piedras preciosas colombianas" OR "esmeralda colombiana" OR (Colombia AND "gemas" AND "exportación")',
-        ],
-    },
-}
 
 def obtener_noticias():
+    """
+    Obtiene noticias desde Google News RSS — gratis, sin API key,
+    con la misma cobertura que una búsqueda manual en Google.
+    """
     import xml.etree.ElementTree as ET
     import urllib.parse
     from email.utils import parsedate_to_datetime
 
-    ahora    = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
-    hace_48h = ahora - datetime.timedelta(hours=72)  # ventana ampliada a 72h
+    ahora = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+    # Ventana de 48h para capturar más artículos (36h era muy estricto)
+    hace_48h = ahora - datetime.timedelta(hours=48)
+
+    # ── CONTEXTO OBLIGATORIO ─────────────────────────────────────────────────
+    # Al menos UNA de estas frases debe aparecer en titulo+descripcion.
+    CONTEXTO_MERCADO = [
+        # Oro — precio y mercado
+        "precio del oro", "cotización del oro", "onza de oro", "onza troy",
+        "mercado del oro", "reservas de oro", "lingote de oro", "lingotes de oro",
+        "minería de oro", "minería aurífera", "oro físico", "producción de oro",
+        "extracción de oro", "comercio de oro", "compra de oro",
+        "inversión en oro", "demanda de oro", "activo de oro",
+        "fondo de oro", "etf de oro", "futuros del oro", "precio spot del oro",
+        "récord del oro", "máximo histórico del oro", "repatriación de oro",
+        "minería ilegal de oro", "formalización minera", "ecoDorado",
+        "compañía minera de oro", "producción aurífera",
+        # Plata, platino, paladio
+        "precio de la plata", "cotización de la plata", "onza de plata",
+        "mercado de la plata", "lingote de plata", "inversión en plata",
+        "precio del platino", "precio del paladio", "paladio",
+        # Metales preciosos en general
+        "metales preciosos", "metal precioso", "activo refugio",
+        "valor refugio", "refugio de valor", "centenario de oro",
+        # Geopolítica con metales
+        "brics oro", "bancos centrales oro", "reserva en oro",
+        "banco central compra oro", "reservas de oro de los bancos",
+        # Esmeraldas y gemas
+        "esmeralda", "esmeraldas", "esmeraldas colombianas",
+        "muzo", "marmato", "chivor", "minería de esmeraldas",
+        "piedra preciosa", "piedras preciosas",
+        # Diamantes
+        "industria del diamante", "mercado de diamantes", "mina de diamantes",
+        "diamantes sintéticos", "diamantes de laboratorio", "producción de diamantes",
+        "crisis del diamante", "comercio de diamantes",
+    ]
+
+    # ── BASURA — ELIMINACIÓN INMEDIATA ──────────────────────────────────────
+    BASURA = [
+        # Vietnam: palabras específicas de sus reportes de precio local
+        "precio del oro en sjc",
+        "anillos de oro de 9999",
+        "precio del oro en vietnam",
+        "precio mundial del oro. - vietnam",
+        "vnd por onza",
+        "sjc, precio del oro",
+        "precio del oro de 24 quilates y precios mundiales",
+        "tael de oro",
+        # Videojuegos
+        "free fire", "freefire", "códigos de hoy", "recompensas gratis",
+        "league of legends", "clash of clans", "clash royale", "fortnite",
+        "valorant", "pubg", "mobile legends", "honor of kings",
+        "battle royale", "videojuego", "gaming", "gamer", "gameplay",
+        "rango de oro", "rango de plata", "rango de diamante",
+        "temporada de juego", "pase de batalla", "loot",
+        # Moda y farándula
+        "lució", "llevó puesto", "vistió con",
+        "reina camilla", "kate middleton", "meghan markle",
+        "alfombra roja", "look de", "outfit", "tendencia de moda",
+        "diseño de joyas", "colección de joyas", "joya real",
+        "novia real", "boda real",
+        # Geografía (ciudades con nombre de metal)
+        "mar del plata", "río de la plata",
+        # Crimen
+        "estafa", "robo de", "hurto de", "arrestaron", "capturaron",
+        "secuestro", "homicidio",
+        # Deportes
+        "fútbol", "futbol", "balón de oro", "gol de oro",
+        "medalla de oro", "copa de oro", "nba", "nfl", "champions",
+        "premier league", "atletismo", "ciclismo", "tenis", "boxeo",
+        # Entretenimiento
+        "premio platino", "premios platino",
+        "golden globe", "bafta", "emmy", "grammy", "bts", "kpop",
+        "concierto", "gira musical", "festival de cine",
+        "actor", "actriz", "estreno de", "película",
+        # Economía no relacionada
+        "plazo fijo", "cepo al dólar", "dólar blue",
+        "granos", "soja", "trigo", "maíz", "cosecha", "ganadería",
+        "billete", "papel moneda", "tarjeta de crédito",
+        # Tecnología / otros
+        "samsung", "xiaomi", "iphone", "receta", "cocina",
+        "celular", "smartphone", "biblioteca",
+        # Metáforas
+        "corazón de oro", "edad de oro", "regla de oro",
+        "color dorado", "boda de plata", "disco de oro",
+    ]
+
+    noticias_validas = []
+    titulos_vistos  = set()
+
+    # ── CONSULTAS TEMÁTICAS — MAX 3 ARTÍCULOS POR TEMA ─────────────────────
+    # Cada tupla: (query, max_articulos_por_consulta)
+    CONSULTAS = [
+        # TEMA 1: Geopolítica y guerra — cómo afectan al oro en el mundo
+        ('"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "geopolítica" OR '
+         '"Oriente Medio" OR "misil" OR "tensión" OR "repatriación")', 3),
+
+        # TEMA 2: Bancos centrales, BRICS, reservas — tendencias macro globales
+        ('"reservas de oro" OR "repatriación de oro" OR "bancos centrales" AND "oro" '
+         'OR "brics" AND "oro" OR "lingote de oro" OR "banco central" AND "oro"', 3),
+
+        # TEMA 3: Colombia local — Medellín, minería, esmeraldas, regulación
+        ('(Colombia OR Medellín OR Bogotá OR Boyacá OR Antioquia) AND '
+         '("oro" OR "esmeraldas" OR "minería" OR "muzo" OR "marmato" OR "chivor")', 3),
+
+        # TEMA 4: Cotización y precio — solo 2, no saturar
+        ('"precio del oro" OR "cotización del oro" OR "precio de la plata" '
+         'OR "cotización de la plata" OR "onza de oro"', 2),
+
+        # TEMA 5: Diamantes — crisis, laboratorio, cierre de minas
+        ('"industria del diamante" OR "diamantes de laboratorio" OR '
+         '"diamantes sintéticos" OR "crisis del diamante" OR "mina de diamantes"', 2),
+
+        # TEMA 6: Plata, platino, paladio — mercado e inversión
+        ('"mercado de la plata" OR "precio de la plata" OR "platino" OR "paladio" '
+         'OR "metales preciosos" AND ("inversión" OR "refugio" OR "rally" OR "récord")', 2),
+
+        # TEMA 7: Minería global — récords, grandes empresas, África, Asia
+        ('"producción de oro" AND ("récord" OR "record") OR '
+         '"compañía minera" AND "oro" OR "Zimbabue" AND "oro" OR '
+         '"Singapur" AND "oro" OR "minería aurífera" AND ("récord" OR "record")', 2),
+
+        # TEMA 8 (RESCATE): consulta amplia si no llegamos a 8 artículos
+        # Se activa automáticamente si los temas anteriores no alcanzan.
+        ('"oro" OR "plata" OR "metales preciosos" OR "esmeraldas"', 3),
+    ]
 
     headers = {
         'User-Agent': (
@@ -382,161 +424,461 @@ def obtener_noticias():
         )
     }
 
-    resultados     = {cat: [] for cat in CATEGORIAS}
-    titulos_vistos = set()
-    # Contador para limitar noticias de precio en ORO a máximo 1
-    precio_oro_count = [0]
+    for i_consulta, (query, max_por_consulta) in enumerate(CONSULTAS):
+        if len(noticias_validas) >= 10:
+            break
 
-    def fetch_items(query):
-        """Google News RSS — solo español Colombia."""
-        q_enc = urllib.parse.quote(query)
-        url   = (f"https://news.google.com/rss/search"
-                 f"?q={q_enc}&hl=es-419&gl=CO&ceid=CO:es")
-        res   = requests.get(url, headers=headers, timeout=15)
-        root  = ET.fromstring(res.content)
-        return root.findall('.//item')
+        # El tema 8 (rescate) solo corre si tenemos menos de 8 artículos
+        if i_consulta == 7 and len(noticias_validas) >= 8:
+            break
 
-    def validar(item, categoria):
-        titulo   = (item.findtext('title')       or '').strip()
-        link     = (item.findtext('link')        or '').strip()
-        pub_date = (item.findtext('pubDate')     or '').strip()
-        desc     = (item.findtext('description') or '').strip()
-
-        if not titulo or not link:
-            return None
-
-        # Filtro 0 — fuente bloqueada
-        src = item.find('source')
-        if src is not None:
-            fuente = ((src.text or '') + ' ' + (src.get('url') or '')).lower()
-            if any(d in fuente for d in DOMINIOS_BLOQUEADOS_FUENTE):
-                return None
-
-        # Filtro 1 — ventana 72h
+        encontrados_esta_consulta = 0
         try:
-            if parsedate_to_datetime(pub_date) < hace_48h:
-                return None
-        except Exception:
-            pass
+            q_encoded = urllib.parse.quote(query)
+            url_rss = (
+                f"https://news.google.com/rss/search"
+                f"?q={q_encoded}&hl=es-419&gl=CO&ceid=CO:es"
+            )
+            res  = requests.get(url_rss, headers=headers, timeout=15)
+            root = ET.fromstring(res.content)
 
-        texto       = (titulo + ' ' + desc).lower()
-        titulo_solo = titulo.lower()  # para validaciones que deben pasar por el título
+            for item in root.findall('.//item'):
+                if len(noticias_validas) >= 10:
+                    break
+                if encontrados_esta_consulta >= max_por_consulta:
+                    break
 
-        # Filtro 2 — basura (en título + descripción)
-        if any(b in texto for b in BASURA):
-            return None
+                titulo   = (item.findtext('title') or "").strip()
+                link     = (item.findtext('link') or "").strip()
+                pub_date = (item.findtext('pubDate') or "").strip()
+                desc     = (item.findtext('description') or "").strip()
 
-        # Filtro 2b — basura exclusiva del TÍTULO
-        if any(b in titulo_solo for b in BASURA):
-            return None
+                if not titulo or not link:
+                    continue
 
-        # Filtro 3 — contexto según categoría
-        # IMPORTANTE: para ORO se valida SOLO en el título para evitar falsos positivos
-        # por contenido de artículos relacionados en el RSS de Google News
-        if categoria == 'oro' and not any(c in titulo_solo for c in CONTEXTO_ORO):
-            return None
-        if categoria == 'esmeralda' and not any(c in texto for c in CONTEXTO_ESMERALDA):
-            return None
+                # FILTRO 0: Bloquear fuentes vietnamitas (y similares) por source element
+                source_elem = item.find('source')
+                if source_elem is not None:
+                    fuente_nombre = (source_elem.text or "").lower()
+                    fuente_url    = (source_elem.get('url') or "").lower()
+                    fuente_completa = fuente_nombre + " " + fuente_url
+                    if any(d in fuente_completa for d in DOMINIOS_BLOQUEADOS_FUENTE):
+                        print(f"[NOTICIAS] Fuente bloqueada ({fuente_nombre}): {titulo[:50]}")
+                        continue
 
-        # Filtro 4 — limitar noticias de PRECIO ORO a 1
-        if categoria == 'oro':
-            es_precio = any(kw in texto for kw in PALABRAS_PRECIO_ORO)
-            if es_precio:
-                if precio_oro_count[0] >= 1:
-                    print(f"  [SKIP precio] Ya tenemos 1 noticia de precio: {titulo[:50]}")
-                    return None
-                precio_oro_count[0] += 1
+                # FILTRO 1: solo noticias de las ultimas 48h
+                try:
+                    fecha_pub = parsedate_to_datetime(pub_date)
+                    if fecha_pub < hace_48h:
+                        continue
+                except Exception:
+                    pass  # si no se parsea la fecha, se incluye igual
 
-        # Filtro 5 — historial entre ejecuciones
-        if gestionar_historial(titulo):
-            return None
+                texto_check = (titulo + " " + desc).lower()
 
-        # Filtro 6 — duplicados en esta tanda
-        clave = normalizar_titulo(titulo)
-        if clave in titulos_vistos:
-            return None
+                # FILTRO 2: basura fuera (Vietnam local, juegos, moda, deporte)
+                if any(b in texto_check for b in BASURA):
+                    continue
 
-        return titulo, link
+                # FILTRO 3: debe tener contexto real de metales/gemas
+                if not any(c in texto_check for c in CONTEXTO_MERCADO):
+                    continue
 
-    # ── LLENADO DE CUBETAS ────────────────────────────────────────────
-    for cat_name, cat in CATEGORIAS.items():
-        target = cat['target']
-        print(f"\n[NOTICIAS] ── {cat['emoji']} {cat['label']} (objetivo: {target}) ──")
+                # FILTRO 4: sin repetidos historicos entre ejecuciones
+                if gestionar_historial(titulo):
+                    continue
 
-        for query in cat['queries']:
-            if len(resultados[cat_name]) >= target:
-                break
-            try:
-                items = fetch_items(query)
-                for item in items:
-                    if len(resultados[cat_name]) >= target:
-                        break
-                    resultado = validar(item, cat_name)
-                    if resultado:
-                        titulo, link = resultado
-                        titulos_vistos.add(normalizar_titulo(titulo))
-                        resultados[cat_name].append({'title': titulo, 'url': link})
-                        print(f"  ✓ {titulo[:70]}")
-                time.sleep(0.8)
-            except Exception as e:
-                print(f"  [ERROR] {cat_name}: {e}")
+                # FILTRO 5: sin duplicados en esta tanda (misma historia, distinta fuente)
+                clave = normalizar_titulo(titulo)
+                if clave in titulos_vistos:
+                    continue
+                titulos_vistos.add(clave)
 
-        encontradas = len(resultados[cat_name])
-        estado      = "✅" if encontradas >= target else f"⚠️  solo {encontradas}/{target}"
-        print(f"  → {cat['label']}: {encontradas}/{target} {estado}")
+                noticias_validas.append({'title': titulo, 'url': link})
+                encontrados_esta_consulta += 1
+                print(f"[NOTICIAS] T{i_consulta+1} [{encontrados_esta_consulta}/{max_por_consulta}] {titulo[:65]}")
 
-    total = sum(len(v) for v in resultados.values())
-    print(f"\n[NOTICIAS] Total: {total} noticias")
-    return resultados
+        except Exception as e:
+            print(f"[NOTICIAS] Error en consulta {i_consulta+1}: {e}")
+
+        # Pequeña pausa entre consultas para no saturar Google
+        time.sleep(1)
+
+    print(f"[NOTICIAS] Total encontradas: {len(noticias_validas)}")
+    return noticias_validas
+
 
 def tarea_noticias(fecha):
     print("[NOTICIAS] Iniciando...")
-    resultados = obtener_noticias()
-    total = sum(len(v) for v in resultados.values())
+    arts = obtener_noticias()
 
-    if total == 0:
+    if not arts:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
-            "No se encontraron noticias nuevas en las últimas 72h."
+            "No se encontraron noticias nuevas sobre metales y gemas en las ultimas 48h.\n"
+            "Puede ser un dia sin novedades o un problema de conectividad."
         )
-        return
+        print("[NOTICIAS] Sin resultados válidos hoy.")
+        return []
 
     folio = gestionar_folio("noticias")
-    msg   = (
-        f"💎 <b>NOTICIAS — METALES Y GEMAS</b> 🏆\n"
+    msg = (
+        f"📎 <b>NOTICIAS — METALES Y GEMAS</b> 🏆\n"
         f"📅 <i>{fecha}    #{folio}</i>\n\n"
     )
+    for i, art in enumerate(arts, 1):
+        msg += f"<b>{i}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
 
-    contador = 1
-    for cat_name, cat in CATEGORIAS.items():
-        arts = resultados[cat_name]
-        msg += f"{cat['emoji']} <b>{cat['label']}</b>\n"
-        if not arts:
-            if cat_name == 'esmeralda':
-                msg += "<i>Sin noticias de mercado esta semana.</i>\n"
-            else:
-                msg += "<i>Sin resultados obtenidos.</i>\n"
-        else:
-            for art in arts:
-                msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
-                contador += 1
-        msg += "\n"
-
-    msg += "🤖 <i>Agente CripGold V3.2 — Investigación finalizada.</i>"
+    msg += "\n🧬 <i>Agente CripGold — Investigación finalizada.</i>"
     enviar_telegram(msg)
-    print(f"[NOTICIAS] OK — {total} noticias enviadas.")
+    print(f"[NOTICIAS] OK — {len(arts)} noticias enviadas.")
+    return arts
 
-# ============================================================
-#   MAIN
-# ============================================================
+
+# =====================================================================
+#   TAREA 3 — REPORTE HTML DIARIO
+# =====================================================================
+
+def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None):
+    """
+    Genera el reporte HTML diario con las noticias del día y precios actuales.
+    Devuelve la ruta al archivo generado.
+    """
+    import tempfile
+
+    # --- Bloque de precios (opcional, si se obtuvo precio) ---
+    if oro_usd and usd_cop:
+        gramo_24k = (oro_usd / 31.1034768) * usd_cop
+        precio_html = f"""
+        <div class="precio-bar">
+            <div class="precio-item">
+                <span class="precio-label">🥇 ORO SPOT</span>
+                <span class="precio-val">${oro_usd:,.2f} <small>USD/oz</small></span>
+            </div>
+            <div class="precio-divider"></div>
+            <div class="precio-item">
+                <span class="precio-label">💱 TRM HOY</span>
+                <span class="precio-val">${usd_cop:,.2f} <small>COP/USD</small></span>
+            </div>
+            <div class="precio-divider"></div>
+            <div class="precio-item">
+                <span class="precio-label">⚡ GRAMO 24K</span>
+                <span class="precio-val">${gramo_24k:,.0f} <small>COP</small></span>
+            </div>
+        </div>
+        """
+    else:
+        precio_html = '<div class="precio-bar"><span style="color:#B8860B;">Precios no disponibles hoy</span></div>'
+
+    # --- Tarjetas de noticias ---
+    cards_html = ""
+    for i, art in enumerate(arts, 1):
+        cards_html += f"""
+        <div class="card">
+            <div class="card-num">{i:02d}</div>
+            <div class="card-body">
+                <a href="{art['url']}" class="card-title" target="_blank">{art['title']}</a>
+            </div>
+            <div class="card-arrow">→</div>
+        </div>
+        """
+
+    # --- Timestamp ---
+    now_str = datetime.datetime.now().strftime("%d/%m/%Y %H:%M")
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CripGold · Reporte {fecha}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+  :root {{
+    --gold: #FFD700;
+    --gold-dark: #B8860B;
+    --gold-dim: #7a6000;
+    --bg: #0D0D0D;
+    --bg2: #141414;
+    --bg3: #1A1A1A;
+    --text: #E8E8E8;
+    --text-dim: #888;
+    --border: rgba(255,215,0,0.15);
+    --card-bg: rgba(255,215,0,0.04);
+    --card-hover: rgba(255,215,0,0.08);
+  }}
+
+  body {{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    padding: 0;
+  }}
+
+  /* ── HEADER ── */
+  .header {{
+    background: linear-gradient(135deg, #0a0a0a 0%, #1a1400 50%, #0a0a0a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 40px 32px 28px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }}
+  .header::before {{
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 50% 0%, rgba(255,215,0,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }}
+  .logo-text {{
+    font-family: 'Playfair Display', serif;
+    font-size: 42px;
+    font-weight: 900;
+    letter-spacing: 6px;
+    background: linear-gradient(135deg, #FFD700, #FFF8DC, #B8860B);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+  }}
+  .logo-sub {{
+    font-size: 11px;
+    letter-spacing: 4px;
+    color: var(--gold-dim);
+    margin-top: 6px;
+    text-transform: uppercase;
+  }}
+  .header-date {{
+    margin-top: 16px;
+    font-size: 13px;
+    color: var(--text-dim);
+    letter-spacing: 2px;
+  }}
+  .header-date strong {{ color: var(--gold); }}
+
+  /* ── PRECIO BAR ── */
+  .precio-bar {{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0;
+    background: rgba(255,215,0,0.05);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin: 28px auto 0;
+    max-width: 700px;
+    padding: 18px 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }}
+  .precio-item {{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 140px;
+  }}
+  .precio-label {{
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--gold-dim);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }}
+  .precio-val {{
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--gold);
+  }}
+  .precio-val small {{ font-size: 11px; color: var(--gold-dim); margin-left: 2px; }}
+  .precio-divider {{
+    width: 1px;
+    height: 40px;
+    background: var(--border);
+    flex-shrink: 0;
+  }}
+
+  /* ── MAIN ── */
+  .main {{
+    max-width: 820px;
+    margin: 0 auto;
+    padding: 40px 24px 60px;
+  }}
+
+  .section-label {{
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: var(--gold-dark);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }}
+  .section-title {{
+    font-family: 'Playfair Display', serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text);
+    margin-bottom: 24px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }}
+
+  /* ── CARDS ── */
+  .cards {{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }}
+  .card {{
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    cursor: pointer;
+    text-decoration: none;
+  }}
+  .card:hover {{
+    background: var(--card-hover);
+    border-color: rgba(255,215,0,0.30);
+    transform: translateX(4px);
+  }}
+  .card-num {{
+    font-family: 'Playfair Display', serif;
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--gold-dark);
+    min-width: 36px;
+    line-height: 1;
+    opacity: 0.7;
+  }}
+  .card-body {{ flex: 1; }}
+  .card-title {{
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    line-height: 1.45;
+    text-decoration: none;
+    display: block;
+  }}
+  .card-title:hover {{ color: var(--gold); }}
+  .card-arrow {{
+    font-size: 18px;
+    color: var(--gold-dark);
+    opacity: 0.5;
+    flex-shrink: 0;
+    transition: opacity 0.2s;
+  }}
+  .card:hover .card-arrow {{ opacity: 1; color: var(--gold); }}
+
+  /* ── FOOTER ── */
+  .footer {{
+    text-align: center;
+    padding: 32px 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 12px;
+    letter-spacing: 1px;
+  }}
+  .footer strong {{ color: var(--gold-dark); }}
+
+  /* ── SCANLINE DECO ── */
+  body::after {{
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo-text">CRIPGOLD</div>
+  <div class="logo-sub">Mercado del Oro · Análisis Diario</div>
+  <div class="header-date">📅 <strong>{fecha}</strong> &nbsp;·&nbsp; Generado a las {now_str}</div>
+  {precio_html}
+</div>
+
+<div class="main">
+  <div class="section-label">📰 Inteligencia de mercado</div>
+  <h2 class="section-title">Noticias del Día — {len(arts)} artículos seleccionados</h2>
+
+  <div class="cards">
+    {cards_html}
+  </div>
+</div>
+
+<div class="footer">
+  Generado automáticamente por <strong>Agente CripGold V2</strong> · {now_str}<br>
+  Metales preciosos · Inversiones · Gemas · Colombia
+</div>
+
+</body>
+</html>"""
+
+    # Guardar en carpeta temporal del sistema
+    nombre_archivo = f"reporte_cripgold_{datetime.datetime.now().strftime('%Y%m%d')}.html"
+    ruta = os.path.join(tempfile.gettempdir(), nombre_archivo)
+    with open(ruta, 'w', encoding='utf-8') as f:
+        f.write(html)
+
+    print(f"[REPORTE] HTML generado: {ruta} ({os.path.getsize(ruta):,} bytes)")
+    return ruta
+
+
+# =====================================================================
+#   MAIN — Punto de entrada
+# =====================================================================
+
 if __name__ == "__main__":
     fecha = datetime.datetime.now().strftime('%d/%m/%Y')
     print(f"\n{'='*50}")
-    print(f"  AGENTE CRIPGOLD V3.2 — {fecha}")
+    print(f"  AGENTE CRIPGOLD V2 — {fecha}")
     print(f"{'='*50}\n")
 
-    enviar_telegram(f"🤖 <b>Agente CripGold V3.2 — Iniciado</b>\n📅 {fecha}")
-    tarea_precios(fecha)
-    tarea_noticias(fecha)
-    enviar_telegram("✅ <b>Agente CripGold V3.2 — Tareas completadas.</b>")
-    print("\n[DONE] Agente V3.2 finalizado.")
+    # Aviso de inicio
+    enviar_telegram(f"🧬 <b>Agente CripGold V2 — Iniciado</b>\n📅 {fecha}")
+
+    # Tarea 1: Precios (ahora retorna valores para el reporte)
+    oro_usd, usd_cop, gramo_cop = tarea_precios(fecha)
+
+    # Tarea 2: Noticias (ahora retorna la lista de artículos)
+    arts = tarea_noticias(fecha)
+
+    # Tarea 3: Reporte HTML — se genera y envía como documento Telegram
+    if arts:
+        print("[REPORTE] Generando reporte HTML del día...")
+        ruta_reporte = generar_reporte_html(arts, fecha, oro_usd, usd_cop)
+        if ruta_reporte and os.path.exists(ruta_reporte):
+            caption = (
+                f"📊 <b>Reporte CripGold</b> · {fecha}\n"
+                f"📰 {len(arts)} noticias del mercado del oro\n"
+                f"🥇 Oro: ${oro_usd:,.2f} USD/oz" if oro_usd else
+                f"📊 <b>Reporte CripGold</b> · {fecha}\n📰 {len(arts)} noticias seleccionadas"
+            )
+            enviar_documento_telegram(ruta_reporte, caption)
+            print(f"[REPORTE] Reporte enviado a {len(DESTINATARIOS)} destinatarios.")
+        else:
+            print("[REPORTE] ERROR: no se pudo generar el archivo HTML.")
+    else:
+        print("[REPORTE] Sin artículos — no se genera reporte hoy.")
+
+    # Aviso de cierre
+    enviar_telegram("✅ <b>Agente CripGold — Tareas completadas.</b>")
+    print("\n[DONE] Agente finalizado correctamente.")
