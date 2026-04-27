@@ -494,7 +494,27 @@ def obtener_noticias():
                     continue
                 titulos_vistos.add(clave)
 
-                noticias_validas.append({'title': titulo, 'url': link})
+                # Obtener nombre de fuente para mostrar en mensaje y reporte
+                src_name = ""
+                if source_elem is not None:
+                    src_name = (source_elem.text or "").strip()
+
+                # Limpiar descripción: quitar etiquetas HTML y entidades
+                import re as _re
+                desc_clean = _re.sub(r'<[^>]+>', ' ', desc)
+                for _e, _r in [('&nbsp;',' '),('&amp;','&'),('&lt;','<'),('&gt;','>'),('&quot;','"'),('&#39;',"'")]:
+                    desc_clean = desc_clean.replace(_e, _r)
+                desc_clean = ' '.join(desc_clean.split())
+                if len(desc_clean) > 200:
+                    desc_clean = desc_clean[:200].rsplit(' ', 1)[0] + '…'
+
+                noticias_validas.append({
+                    'title': titulo,
+                    'url':   link,
+                    'desc':  desc_clean,
+                    'source': src_name,
+                    'tema':  i_consulta,
+                })
                 encontrados_esta_consulta += 1
                 print(f"[NOTICIAS] T{i_consulta+1} [{encontrados_esta_consulta}/{max_por_consulta}] {titulo[:65]}")
 
@@ -527,7 +547,8 @@ def tarea_noticias(fecha):
         f"📅 <i>{fecha}    #{folio}</i>\n\n"
     )
     for i, art in enumerate(arts, 1):
-        msg += f"<b>{i}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
+        src = f" · <i>{art['source']}</i>" if art.get('source') else ""
+        msg += f"\n<b>{i}.</b> <a href='{art['url']}'>{art['title']}</a>{src}\n"
 
     msg += "\n🧬 <i>Agente CripGold — Investigación finalizada.</i>"
     enviar_telegram(msg)
@@ -536,15 +557,367 @@ def tarea_noticias(fecha):
 
 
 # =====================================================================
-#   TAREA 3 — REPORTE HTML DIARIO
+#   TAREA 3 — REPORTE HTML DIARIO (Dashboard Premium)
 # =====================================================================
 
 def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None):
     """
-    Genera el reporte HTML diario con las noticias del día y precios actuales.
-    Devuelve la ruta al archivo generado.
+    Dashboard premium: precios en vivo + indicadores de mercado + noticias
+    agrupadas por tema con resúmenes del RSS. Devuelve ruta al .html generado.
     """
     import tempfile
+    import re as _re
+
+    # ── HELPER: escape HTML para evitar romper etiquetas ─────────────
+    def esc(t):
+        return (t or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
+
+    # ── TEMAS ────────────────────────────────────────────────────────
+    TEMAS = [
+        (0, "🌍", "Geopolítica &amp; Tensión",          "#e05252"),
+        (1, "🏛",  "Bancos Centrales &amp; Reservas",    "#4a9edd"),
+        (2, "🇨🇴", "Colombia",                           "#f5c842"),
+        (3, "📈",  "Cotización &amp; Precio",            "#2ecc71"),
+        (4, "💎",  "Diamantes",                          "#b389e8"),
+        (5, "⚪",  "Plata &amp; Platino",                "#a0aec0"),
+        (6, "⛏",  "Minería Global",                     "#e8965a"),
+        (7, "🔍",  "Análisis General",                   "#48c9b0"),
+    ]
+
+    # ── MÉTRICAS ─────────────────────────────────────────────────────
+    all_text = ' '.join((a['title']+' '+a.get('desc','')).lower() for a in arts)
+
+    BULLISH = ['récord','record','sube','subió','máximo','demanda','rally','alza',
+               'aumenta','fuerte','histórico','supera','crece','boom','impulsa']
+    BEARISH  = ['cae','cayó','baja','bajó','crisis','presión','disminuye','pierde',
+               'débil','mínimo','colapso','desploma','riesgo','contracción']
+    sent = 50
+    for a in arts:
+        t = (a['title']+' '+a.get('desc','')).lower()
+        sent += sum(3 for w in BULLISH if w in t)
+        sent -= sum(3 for w in BEARISH if w in t)
+    sent = max(5, min(95, sent))
+
+    if   sent >= 65: sent_label, sent_color = 'ALCISTA', '#2ecc71'
+    elif sent >= 45: sent_label, sent_color = 'NEUTRAL',  '#f39c12'
+    else:            sent_label, sent_color = 'BAJISTA',  '#e74c3c'
+
+    def kw(words): return sum(1 for w in words if w in all_text)
+    bc_arts  = [a for a in arts if a.get('tema') == 1]
+    min_arts = [a for a in arts if a.get('tema') in (2,6)]
+    geo_arts = [a for a in arts if a.get('tema') == 0]
+
+    ind_bc  = min(95, 40 + len(bc_arts)*12  + kw(['banco central','reservas','brics','repatriación'])*6)
+    ind_min = min(95, 35 + len(min_arts)*11 + kw(['producción','minería','toneladas','extracción','récord'])*5)
+    ind_inv = sent
+    ind_vol = min(95, 15 + len(geo_arts)*15 + kw(['guerra','tensión','misil','aranceles','trump','conflicto'])*8)
+
+    # Precios
+    gramo_24k = gramo_18k = gramo_14k = gramo_10k = 0.0
+    if oro_usd and usd_cop:
+        gramo_24k = (oro_usd / 31.1034768) * usd_cop
+        gramo_18k = gramo_24k * 0.74
+        gramo_14k = gramo_24k * 0.575
+        gramo_10k = gramo_24k * 0.40
+
+    # Agrupar por tema
+    grupos = {}
+    for a in arts:
+        grupos.setdefault(a.get('tema', 7), []).append(a)
+
+    # Titular destacado
+    headline = next((a for a in arts if a.get('tema') in (3,0,1)), arts[0] if arts else None)
+
+    now_str = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
+
+    # ── CSS (string plano, sin f-string → llaves normales) ───────────
+    CSS = """
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --gold:#FFD700;--gold-dk:#B8860B;--gold-dim:#6a5400;
+  --bg:#0C0C0C;--bg2:#121212;--bg3:#181818;--bg4:#1e1e1e;
+  --text:#E8E8E0;--dim:#777;
+  --border:rgba(255,215,0,.13);--border2:rgba(255,215,0,.22);
+}
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh}
+
+/* HEADER */
+.hdr{
+  background:linear-gradient(135deg,#090909 0%,#160f00 50%,#090909 100%);
+  border-bottom:1px solid var(--border);
+  padding:36px 32px 24px;text-align:center;position:relative;overflow:hidden
+}
+.hdr::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 70% 90% at 50% -10%,rgba(255,215,0,.07) 0%,transparent 70%);
+  pointer-events:none
+}
+.logo{
+  font-family:'Playfair Display',serif;font-size:46px;font-weight:900;letter-spacing:8px;
+  background:linear-gradient(135deg,#FFD700,#FFFDE0,#B8860B);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;line-height:1
+}
+.logo-sub{font-size:11px;letter-spacing:5px;color:var(--gold-dim);margin-top:5px;text-transform:uppercase}
+.hdr-date{margin-top:14px;font-size:12px;color:var(--dim);letter-spacing:2px}
+.hdr-date b{color:var(--gold)}
+
+/* TICKER */
+.ticker{
+  display:flex;justify-content:center;align-items:stretch;flex-wrap:wrap;
+  background:rgba(255,215,0,.04);border:1px solid var(--border);
+  border-radius:14px;margin:24px auto 0;max-width:920px;overflow:hidden
+}
+.tk-item{padding:18px 16px;text-align:center;flex:1;min-width:130px}
+.tk-sep{width:1px;background:var(--border);align-self:stretch;flex-shrink:0}
+.tk-lbl{font-size:9px;letter-spacing:2px;color:var(--gold-dim);text-transform:uppercase;margin-bottom:6px}
+.tk-val{font-size:18px;font-weight:700;color:var(--gold);line-height:1}
+.tk-unit{font-size:10px;color:var(--dim);margin-top:3px}
+
+/* MAIN */
+.main{max-width:960px;margin:0 auto;padding:36px 24px 60px}
+
+/* DASHBOARD ROW */
+.dash-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:40px}
+.dash-box{background:var(--bg3);border:1px solid var(--border);border-radius:14px;padding:24px}
+.dash-title{font-size:10px;letter-spacing:3px;color:var(--gold-dk);text-transform:uppercase;margin-bottom:20px}
+
+/* SENTIMIENTO */
+.sent-score{text-align:center;margin-bottom:20px}
+.sent-num{font-family:'Playfair Display',serif;font-size:52px;font-weight:900;line-height:1}
+.sent-lbl{font-size:13px;letter-spacing:3px;margin-top:6px;font-weight:600}
+.gauge-track{height:10px;border-radius:5px;
+  background:linear-gradient(to right,#e74c3c 0%,#f39c12 50%,#2ecc71 100%);
+  position:relative;margin:10px 0 6px}
+.gauge-needle{
+  position:absolute;top:-5px;width:3px;height:20px;
+  background:#fff;border-radius:2px;transform:translateX(-50%);
+  box-shadow:0 0 8px rgba(255,255,255,.6)
+}
+.gauge-labels{display:flex;justify-content:space-between;font-size:9px;color:var(--dim);letter-spacing:1px}
+
+/* INDICADORES */
+.ind-row{margin-bottom:16px}
+.ind-label{font-size:9px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+.ind-track{height:6px;background:rgba(255,255,255,.07);border-radius:3px;overflow:hidden}
+.ind-fill{height:100%;border-radius:3px}
+.ind-pct{font-size:11px;color:var(--text);margin-top:4px;text-align:right}
+
+/* SECCIÓN */
+.sec-label{font-size:10px;letter-spacing:4px;color:var(--gold-dk);text-transform:uppercase;margin-bottom:6px}
+.sec-title{
+  font-family:'Playfair Display',serif;font-size:24px;font-weight:700;
+  color:var(--text);margin-bottom:28px;padding-bottom:12px;border-bottom:1px solid var(--border)
+}
+
+/* GRUPOS */
+.grupo{margin-bottom:32px}
+.grupo-hdr{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 16px;background:var(--bg3);
+  border:1px solid var(--border);border-radius:10px 10px 0 0;border-bottom:none
+}
+.grupo-icon{font-size:16px}
+.grupo-name{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--text);font-weight:600;flex:1}
+.grupo-cnt{
+  font-size:10px;background:rgba(255,215,0,.1);
+  border:1px solid var(--border);border-radius:20px;
+  padding:2px 10px;color:var(--gold-dk)
+}
+
+/* TARJETAS DE ARTÍCULOS */
+.art-card{
+  display:flex;background:rgba(255,215,0,.03);
+  border:1px solid var(--border);border-top:none;
+  transition:background .2s,border-color .2s
+}
+.art-card:last-child{border-radius:0 0 10px 10px}
+.art-card:hover{background:rgba(255,215,0,.07);border-color:var(--border2)}
+.art-stripe{width:4px;flex-shrink:0}
+.art-body{padding:14px 18px;flex:1}
+.art-title{
+  display:block;font-size:14px;font-weight:500;
+  color:var(--text);text-decoration:none;line-height:1.5;margin-bottom:5px
+}
+.art-title:hover{color:var(--gold)}
+.art-src{
+  display:inline-block;font-size:10px;color:var(--gold-dim);
+  letter-spacing:1px;text-transform:uppercase;margin-bottom:6px
+}
+.art-desc{font-size:12.5px;color:#999;line-height:1.65;margin-top:2px}
+
+/* REFLEXIÓN */
+.ref-box{
+  background:linear-gradient(135deg,rgba(255,215,0,.05),rgba(255,215,0,.02));
+  border:1px solid var(--border2);border-radius:14px;
+  padding:32px 36px;margin-top:40px;position:relative;overflow:hidden
+}
+.ref-box::before{
+  content:'"';position:absolute;top:-10px;left:20px;
+  font-size:120px;color:rgba(255,215,0,.06);
+  font-family:'Playfair Display',serif;line-height:1
+}
+.ref-lbl{font-size:9px;letter-spacing:4px;color:var(--gold-dk);text-transform:uppercase;margin-bottom:16px}
+.ref-text{font-family:'Playfair Display',serif;font-size:20px;font-style:italic;color:var(--text);line-height:1.6}
+.ref-src{display:block;margin-top:14px;font-size:11px;color:var(--dim);letter-spacing:2px}
+
+/* FOOTER */
+.ftr{
+  text-align:center;padding:28px 24px;border-top:1px solid var(--border);
+  color:var(--dim);font-size:11px;letter-spacing:1px;margin-top:20px
+}
+.ftr b{color:var(--gold-dk)}
+
+/* SCANLINE */
+body::after{
+  content:'';position:fixed;inset:0;pointer-events:none;z-index:999;
+  background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.025) 2px,rgba(0,0,0,.025) 4px)
+}
+
+@media(max-width:640px){
+  .dash-row{grid-template-columns:1fr}
+  .ticker{flex-direction:column}
+  .tk-sep{width:100%;height:1px}
+}
+"""
+
+    # ── SECCIONES DINÁMICAS ──────────────────────────────────────────
+
+    # Ticker de precios
+    if oro_usd and usd_cop:
+        ticker_html = (
+            f'<div class="tk-item"><div class="tk-lbl">🥇 ORO SPOT</div>'
+            f'<div class="tk-val">${oro_usd:,.2f}</div><div class="tk-unit">USD/oz</div></div>'
+            f'<div class="tk-sep"></div>'
+            f'<div class="tk-item"><div class="tk-lbl">💱 TRM</div>'
+            f'<div class="tk-val">${usd_cop:,.2f}</div><div class="tk-unit">COP/USD</div></div>'
+            f'<div class="tk-sep"></div>'
+            f'<div class="tk-item"><div class="tk-lbl">⚡ GRAMO 24K</div>'
+            f'<div class="tk-val">${gramo_24k:,.0f}</div><div class="tk-unit">COP</div></div>'
+            f'<div class="tk-sep"></div>'
+            f'<div class="tk-item"><div class="tk-lbl">✨ GRAMO 18K</div>'
+            f'<div class="tk-val">${gramo_18k:,.0f}</div><div class="tk-unit">COP</div></div>'
+            f'<div class="tk-sep"></div>'
+            f'<div class="tk-item"><div class="tk-lbl">🔸 GRAMO 14K</div>'
+            f'<div class="tk-val">${gramo_14k:,.0f}</div><div class="tk-unit">COP</div></div>'
+        )
+    else:
+        ticker_html = '<div class="tk-item" style="color:#B8860B;text-align:center;width:100%;">Precios no disponibles hoy</div>'
+
+    # Indicadores
+    def ind_bar(label, pct, color):
+        return (
+            f'<div class="ind-row">'
+            f'<div class="ind-label">{label}</div>'
+            f'<div class="ind-track"><div class="ind-fill" style="width:{pct}%;background:{color};"></div></div>'
+            f'<div class="ind-pct">{pct}%</div>'
+            f'</div>'
+        )
+    indicators_html = (
+        ind_bar("DEMANDA BANCOS CENTRALES", ind_bc,  "#4a9edd") +
+        ind_bar("ACTIVIDAD MINERA GLOBAL",  ind_min, "#e8965a") +
+        ind_bar("SENTIMIENTO INVERSOR",     ind_inv, sent_color) +
+        ind_bar("VOLATILIDAD GEOPOLÍTICA",  ind_vol, "#e05252")
+    )
+
+    # Grupos de noticias
+    grupos_html = ""
+    for tema_id, icon, label, color in TEMAS:
+        if tema_id not in grupos:
+            continue
+        cards_html = ""
+        for a in grupos[tema_id]:
+            src_tag  = f'<span class="art-src">{esc(a["source"])}</span>' if a.get('source') else ''
+            desc_tag = f'<p class="art-desc">{esc(a["desc"])}</p>'        if a.get('desc')   else ''
+            cards_html += (
+                f'<div class="art-card">'
+                f'<div class="art-stripe" style="background:{color};"></div>'
+                f'<div class="art-body">'
+                f'<a href="{a["url"]}" target="_blank" class="art-title">{esc(a["title"])}</a>'
+                f'{src_tag}{desc_tag}'
+                f'</div></div>'
+            )
+        n = len(grupos[tema_id])
+        grupos_html += (
+            f'<div class="grupo">'
+            f'<div class="grupo-hdr">'
+            f'<span class="grupo-icon">{icon}</span>'
+            f'<span class="grupo-name">{label}</span>'
+            f'<span class="grupo-cnt">{n} noticia{"s" if n>1 else ""}</span>'
+            f'</div>{cards_html}</div>'
+        )
+
+    # Reflexión
+    ref_text = esc(headline['title']) if headline else 'Sin titular destacado hoy.'
+    ref_src  = esc(headline.get('source','')) if headline else ''
+
+    # ── HTML COMPLETO ────────────────────────────────────────────────
+    html = (
+        f'<!DOCTYPE html>\n<html lang="es">\n<head>\n'
+        f'<meta charset="UTF-8">\n'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1.0">\n'
+        f'<title>CripGold · Dashboard {fecha}</title>\n'
+        f'<link rel="preconnect" href="https://fonts.googleapis.com">\n'
+        f'<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900'
+        f'&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">\n'
+        f'<style>{CSS}</style>\n</head>\n<body>\n\n'
+
+        # HEADER
+        f'<div class="hdr">\n'
+        f'  <div class="logo">CRIPGOLD</div>\n'
+        f'  <div class="logo-sub">Mercado del Oro &nbsp;·&nbsp; Dashboard Diario</div>\n'
+        f'  <div class="hdr-date">📅 <b>{fecha}</b> &nbsp;·&nbsp; {now_str}</div>\n'
+        f'  <div class="ticker">{ticker_html}</div>\n'
+        f'</div>\n\n'
+
+        # MAIN
+        f'<div class="main">\n\n'
+
+        # Dashboard row
+        f'<div class="dash-row">\n'
+
+        # Sentimiento
+        f'<div class="dash-box">\n'
+        f'  <div class="dash-title">📊 Sentimiento del Mercado</div>\n'
+        f'  <div class="sent-score">\n'
+        f'    <div class="sent-num" style="color:{sent_color};">{sent}</div>\n'
+        f'    <div class="sent-lbl" style="color:{sent_color};">{sent_label}</div>\n'
+        f'  </div>\n'
+        f'  <div class="gauge-track"><div class="gauge-needle" style="left:{sent}%;"></div></div>\n'
+        f'  <div class="gauge-labels"><span>BAJISTA</span><span>NEUTRAL</span><span>ALCISTA</span></div>\n'
+        f'</div>\n'
+
+        # Indicadores
+        f'<div class="dash-box">\n'
+        f'  <div class="dash-title">📡 Indicadores de Mercado</div>\n'
+        f'  {indicators_html}\n'
+        f'</div>\n'
+        f'</div>\n\n'  # end dash-row
+
+        # Noticias
+        f'<div class="sec-label">📰 Inteligencia de mercado &nbsp;·&nbsp; {len(arts)} artículos seleccionados</div>\n'
+        f'<h2 class="sec-title">Noticias del Día por Categoría</h2>\n'
+        f'{grupos_html}\n'
+
+        # Reflexión
+        f'<div class="ref-box">\n'
+        f'  <div class="ref-lbl">💡 Titular Destacado del Día</div>\n'
+        f'  <p class="ref-text">{ref_text}</p>\n'
+        f'  <span class="ref-src">— {ref_src} &nbsp;·&nbsp; Agente CripGold {fecha}</span>\n'
+        f'</div>\n\n'
+
+        f'</div>\n\n'  # end main
+
+        # Footer
+        f'<div class="ftr">\n'
+        f'  Generado por <b>Agente CripGold V2</b> &nbsp;·&nbsp; {now_str}<br>\n'
+        f'  Metales preciosos &nbsp;·&nbsp; Inversiones &nbsp;·&nbsp; Gemas &nbsp;·&nbsp; Colombia\n'
+        f'</div>\n\n'
+        f'</body>\n</html>'
+    )
+
+    # Guardar en carpeta temporal del sistema
+    nombre_archivo = f"reporte_cripgold_{datetime.datetime.now().strftime('%Y%m%d')}.html"
+    ruta = os.path.join(tempfile.gettempdir(), nombre_archivo)
 
     # --- Bloque de precios (opcional, si se obtuvo precio) ---
     if oro_usd and usd_cop:
