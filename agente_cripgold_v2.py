@@ -304,4 +304,183 @@ CATEGORIAS = {
             '("banco central" OR "reservas internacionales") AND "oro" AND (Colombia OR Venezuela OR Perú OR México OR Argentina OR Ecuador OR Chile OR Bolivia)',
             '"oro" AND ("guerra" OR "aranceles" OR "Trump" OR "Irán" OR "tensión" OR "repatriación" OR "sanciones" OR "Oriente Medio" OR "OPEP" OR "estrecho de Ormuz")',
             '"reservas de oro" OR "repatriación de oro" OR ("banco central" AND "oro") OR ("brics" AND "oro") OR "lingote de oro" OR ("Turquía" AND "oro") OR ("China" AND "reservas de oro")',
-            '"precio del oro" AND
+            '"precio del oro" AND ("análisis" OR "pronóstico" OR "previsión" OR "resistencia" OR "soporte" OR "alcista" OR "bajista" OR "objetivo" OR "meta")',
+            '"producción de oro" OR "minería aurífera" OR ("inversión" AND "oro") OR "ETF de oro" OR "récord del oro" OR "fondo de oro" OR "demanda de oro"',
+            '"precio del oro hoy" OR "cotización del oro" OR "XAU/USD" OR "onza de oro" OR "precio spot del oro"',
+        ],
+    },
+    'plata': {
+        'target': 2,
+        'emoji': '🥈',
+        'label': 'PLATA',
+        'queries': [
+            '"precio de la plata" OR "cotización de la plata" OR "XAG/USD" OR "mercado de la plata" OR "onza de plata"',
+            '"plata" AND ("análisis" OR "rally" OR "caída" OR "máximo" OR "mínimo" OR "tendencia" OR "inversión" OR "resistencia" OR "soporte")',
+            '"déficit de plata" OR "demanda de plata" OR "ETF de plata" OR "ratio oro plata" OR "Silver Institute" OR "Instituto de la Plata" OR "superávit de plata"',
+            '"plata industrial" OR "demanda industrial de plata" OR "plata solar" OR "plata electrónica" OR ("plata" AND "energía renovable")',
+        ],
+    },
+    'diamante': {
+        'target': 2,
+        'emoji': '💎',
+        'label': 'DIAMANTES',
+        'queries': [
+            '"mercado de diamantes" OR "industria del diamante" OR "diamantes de laboratorio" OR "De Beers" OR "crisis del diamante" OR "mina de diamantes" OR "diamante sintético"',
+            '"diamante" AND ("precio" OR "inversión" OR "sintético" OR "cierre" OR "récord" OR "tendencia" OR "mercado" OR "demanda" OR "cotización")',
+            '("Sotheby\'s" OR "Christie\'s" OR "Bonhams") AND ("diamante" OR "gema" OR "joya" OR "piedra preciosa")',
+            '"subasta de diamante" OR "diamante subasta" OR "récord de subasta" OR "diamante récord" OR "diamante más caro"',
+        ],
+    },
+    'esmeralda': {
+        'target': 1,
+        'emoji': '💚',
+        'label': 'ESMERALDAS',
+        'queries': [
+            '"esmeraldas colombianas" OR "sector esmeraldero" OR "Fedesmeraldas" OR "exportación de esmeraldas" OR "mercado de esmeraldas"',
+            '"esmeralda" AND ("precio" OR "mercado" OR "exportación" OR "inversión" OR "quilate" OR "joya" OR "piedra preciosa" OR "gema")',
+            'Colombia AND ("esmeralda" OR "esmeraldas") AND ("precio" OR "mercado" OR "exportación" OR "quilate" OR "mina")',
+            '("Muzo" OR "Chivor" OR "Coscuez") AND ("esmeralda" OR "gema" OR "piedra preciosa" OR "mina" OR "exportación")',
+            '"gemas colombianas" OR "piedras preciosas colombianas" OR "esmeralda colombiana" OR (Colombia AND "gemas" AND "exportación")',
+        ],
+    },
+}
+
+def obtener_noticias():
+    import xml.etree.ElementTree as ET
+    import urllib.parse
+    from email.utils import parsedate_to_datetime
+
+    ahora    = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+    hace_72h = ahora - datetime.timedelta(hours=72)
+
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/124.0.0.0 Safari/537.36'
+        )
+    }
+
+    resultados       = {cat: [] for cat in CATEGORIAS}
+    titulos_vistos   = set()
+    precio_oro_count = [0]
+
+    def fetch_items(query):
+        q_enc = urllib.parse.quote(query)
+        url   = f"https://news.google.com/rss/search?q={q_enc}&hl=es-419&gl=CO&ceid=CO:es"
+        res   = requests.get(url, headers=headers, timeout=15)
+        root  = ET.fromstring(res.content)
+        return root.findall('.//item')
+
+    def validar(item, categoria):
+        titulo   = (item.findtext('title')       or '').strip()
+        link     = (item.findtext('link')        or '').strip()
+        pub_date = (item.findtext('pubDate')     or '').strip()
+        desc     = (item.findtext('description') or '').strip()
+        if not titulo or not link:
+            return None
+        src = item.find('source')
+        if src is not None:
+            fuente = ((src.text or '') + ' ' + (src.get('url') or '')).lower()
+            if any(d in fuente for d in DOMINIOS_BLOQUEADOS_FUENTE):
+                return None
+        try:
+            if parsedate_to_datetime(pub_date) < hace_72h:
+                return None
+        except Exception:
+            pass
+        texto       = (titulo + ' ' + desc).lower()
+        titulo_solo = titulo.lower()
+        if any(b in texto for b in BASURA):
+            return None
+        if any(b in titulo_solo for b in BASURA):
+            return None
+        if categoria == 'oro' and not any(c in titulo_solo for c in CONTEXTO_ORO):
+            return None
+        if categoria == 'esmeralda' and not any(c in texto for c in CONTEXTO_ESMERALDA):
+            return None
+        if categoria == 'oro':
+            es_precio = any(kw in texto for kw in PALABRAS_PRECIO_ORO)
+            if es_precio:
+                if precio_oro_count[0] >= 1:
+                    return None
+                precio_oro_count[0] += 1
+        if gestionar_historial(titulo):
+            return None
+        clave = normalizar_titulo(titulo)
+        if clave in titulos_vistos:
+            return None
+        return titulo, link
+
+    for cat_name, cat in CATEGORIAS.items():
+        target = cat['target']
+        print(f"\n[NOTICIAS] ── {cat['emoji']} {cat['label']} (objetivo: {target}) ──")
+        for query in cat['queries']:
+            if len(resultados[cat_name]) >= target:
+                break
+            try:
+                items = fetch_items(query)
+                for item in items:
+                    if len(resultados[cat_name]) >= target:
+                        break
+                    resultado = validar(item, cat_name)
+                    if resultado:
+                        titulo, link = resultado
+                        titulos_vistos.add(normalizar_titulo(titulo))
+                        resultados[cat_name].append({'title': titulo, 'url': link})
+                        print(f"  ✓ {titulo[:70]}")
+                time.sleep(0.8)
+            except Exception as e:
+                print(f"  [ERROR] {cat_name}: {e}")
+        encontradas = len(resultados[cat_name])
+        estado      = "✅" if encontradas >= target else f"⚠️  solo {encontradas}/{target}"
+        print(f"  → {cat['label']}: {encontradas}/{target} {estado}")
+
+    total = sum(len(v) for v in resultados.values())
+    print(f"\n[NOTICIAS] Total: {total} noticias")
+    return resultados
+
+def tarea_noticias(fecha):
+    print("[NOTICIAS] Iniciando...")
+    resultados = obtener_noticias()
+    total = sum(len(v) for v in resultados.values())
+    if total == 0:
+        enviar_telegram(
+            "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
+            "No se encontraron noticias nuevas en las últimas 72h."
+        )
+        return
+    folio = gestionar_folio("noticias")
+    msg   = (
+        f"💎 <b>NOTICIAS — METALES Y GEMAS</b> 🏆\n"
+        f"📅 <i>{fecha}    #{folio}</i>\n\n"
+    )
+    contador = 1
+    for cat_name, cat in CATEGORIAS.items():
+        arts = resultados[cat_name]
+        msg += f"{cat['emoji']} <b>{cat['label']}</b>\n"
+        if not arts:
+            msg += "<i>Sin noticias de mercado esta semana.</i>\n" if cat_name == 'esmeralda' else "<i>Sin resultados obtenidos.</i>\n"
+        else:
+            for art in arts:
+                msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>\n"
+                contador += 1
+        msg += "\n"
+    msg += "🤖 <i>Agente CripGold — Investigación finalizada.</i>"
+    enviar_telegram(msg)
+    print(f"[NOTICIAS] OK — {total} noticias enviadas.")
+
+# ============================================================
+#   MAIN
+# ============================================================
+if __name__ == "__main__":
+    fecha = datetime.datetime.now().strftime('%d/%m/%Y')
+    print(f"\n{'='*50}")
+    print(f"  AGENTE CRIPGOLD V3.2 — {fecha}")
+    print(f"{'='*50}\n")
+
+    enviar_telegram(f"🤖 <b>Agente CripGold V3.2 — Iniciado</b>\n📅 {fecha}")
+    tarea_precios(fecha)
+    tarea_noticias(fecha)
+    enviar_telegram("✅ <b>Agente CripGold — Tareas completadas.</b>")
+    print("\n[DONE] Agente V3.2 finalizado.")
