@@ -8,11 +8,9 @@ import time
 #   LatAm extendido, bancos centrales por país
 #   + Reporte HTML diario (Dashboard Premium)
 # ============================================================
-
 TOKEN         = os.environ.get("TELEGRAM_TOKEN", "8678579635:AAFbm5FMzbuDKYCnL_ttmoI0Zq5_ytRrYYM")
 DESTINATARIOS = os.environ.get("TELEGRAM_CHATS", "8526092375,5503549435,6915327599").split(",")
 NEWS_KEY      = os.environ.get("NEWS_API_KEY", "600c50b8de384fa88ba678ab4724d738")
-
 # ============================================================
 #   UTILIDADES
 # ============================================================
@@ -29,8 +27,6 @@ def enviar_telegram(texto):
             requests.post(url, data=payload, timeout=10)
         except Exception as e:
             print(f"[ERROR Telegram] chat {chat_id}: {e}")
-
-
 def enviar_documento_telegram(ruta_archivo, caption=""):
     filename = os.path.basename(ruta_archivo)
     for chat_id in DESTINATARIOS:
@@ -50,8 +46,6 @@ def enviar_documento_telegram(ruta_archivo, caption=""):
                     print(f"[REPORTE] Error enviando a {chat_id}: {res.text[:120]}")
         except Exception as e:
             print(f"[REPORTE] Error enviando a {chat_id}: {e}")
-
-
 def gestionar_folio(tipo):
     archivo = os.path.join(os.path.dirname(__file__), f"contador_{tipo}.txt")
     try:
@@ -66,7 +60,6 @@ def gestionar_folio(tipo):
     except:
         pass
     return nuevo
-
 def gestionar_historial(titulo):
     archivo = os.path.join(os.path.dirname(__file__), "historial_noticias.txt")
     try:
@@ -84,7 +77,6 @@ def gestionar_historial(titulo):
     except:
         pass
     return False
-
 # ============================================================
 #   TAREA 1 — PRECIOS DE COMPRA CRIPGOLD
 # ============================================================
@@ -99,7 +91,6 @@ def obtener_precio_oro_cop():
     }
     oro_usd    = None
     prev_close = None
-
     try:
         res = requests.get("https://data-asg.goldprice.org/dbXRates/USD", headers=headers, timeout=12)
         if res.status_code == 200:
@@ -109,7 +100,6 @@ def obtener_precio_oro_cop():
                 print(f"[PRECIOS] goldprice.org: ${oro_usd}")
     except Exception as e:
         print(f"[PRECIOS] goldprice.org falló: {e}")
-
     for ticker in (["XAUUSD=X", "GC=F"] if not oro_usd else ["GC=F", "XAUUSD=X"]):
         try:
             url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=5d"
@@ -129,7 +119,6 @@ def obtener_precio_oro_cop():
                         break
         except:
             continue
-
     usd_cop = None
     try:
         res = requests.get("https://query1.finance.yahoo.com/v8/finance/chart/COP=X?interval=1d&range=5d", headers=headers, timeout=12)
@@ -137,7 +126,6 @@ def obtener_precio_oro_cop():
             usd_cop = float(res.json()['chart']['result'][0]['meta']['regularMarketPrice'])
     except:
         pass
-
     if oro_usd and usd_cop:
         gramo_cop = (oro_usd / 31.1034768) * usd_cop
         cambio_pct = None
@@ -146,7 +134,6 @@ def obtener_precio_oro_cop():
             cambio_pct = ((gramo_cop - gramo_ayer) / gramo_ayer) * 100
         return oro_usd, usd_cop, gramo_cop, cambio_pct
     return None, None, None, None
-
 def construir_mensaje_precios(base_gramo, porcentaje, folio, fecha):
     base = base_gramo * porcentaje
     etiqueta = f"{int(porcentaje * 100)}%"
@@ -174,7 +161,6 @@ def construir_mensaje_precios(base_gramo, porcentaje, folio, fecha):
         f"10K          — {fr(base * 0.40)}\n"
         f"➖➖➖➖➖➖➖➖➖➖"
     )
-
 def tarea_precios(fecha):
     print("[PRECIOS] Iniciando...")
     oro_usd, usd_cop, gramo_cop, cambio_pct = obtener_precio_oro_cop()
@@ -182,17 +168,14 @@ def tarea_precios(fecha):
         enviar_telegram("⚠️ AGENTE CRIPGOLD — ERROR EN PRECIOS\nVerifica manualmente en finance.yahoo.com")
         return None, None, None, None
     folio = gestionar_folio("precios")
-
     if cambio_pct is not None:
         signo  = "+" if cambio_pct >= 0 else ""
         flecha = "📈" if cambio_pct >= 0 else "📉"
         cambio_txt = f"{flecha} <b>{signo}{cambio_pct:.2f}%</b> vs ayer"
     else:
         cambio_txt = ""
-
     def fmt_cop(v):
         return f"{int(round(v)):,}".replace(",", ".")
-
     mercado_msg = (
         f"📊 <b>Mercado hoy:</b>\n"
         f"🥇 Oro: <b>${oro_usd:,.2f} USD/oz</b>\n"
@@ -201,32 +184,24 @@ def tarea_precios(fecha):
     )
     if cambio_txt:
         mercado_msg += f"\n{cambio_txt}"
-
     enviar_telegram(mercado_msg)
     enviar_telegram(construir_mensaje_precios(gramo_cop, 0.83, folio, fecha))
     enviar_telegram(construir_mensaje_precios(gramo_cop, 0.84, folio, fecha))
-
     if cambio_pct is not None:
         print(f"[PRECIOS] OK — gramo 24K: ${fmt_cop(gramo_cop)} COP | cambio: {cambio_pct:.2f}%")
     else:
         print(f"[PRECIOS] OK — gramo 24K: ${fmt_cop(gramo_cop)} COP")
-
     return oro_usd, usd_cop, gramo_cop, cambio_pct
-
 # ============================================================
 #   TAREA 1B — DASHBOARD HTML DE PRECIOS (interno CripGold)
 # ============================================================
-
 def generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fecha):
     import tempfile
-
     def f(v):   return f"{int(v):,.0f}".replace(",", ".")
     def fr(v):  return f"{int(round(v / 1000) * 1000):,.0f}".replace(",", ".")
     def fk(v):  return f"{int(round(v)):,}".replace(",", ".")
-
     base83 = gramo_cop * 0.83
     base84 = gramo_cop * 0.84
-
     if cambio_pct is not None:
         signo     = "+" if cambio_pct >= 0 else ""
         color_var = "#00FF88" if cambio_pct >= 0 else "#FF1E4A"
@@ -235,9 +210,7 @@ def generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fech
     else:
         color_var  = "#FFD700"
         cambio_str = "—"
-
     now_str = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
-
     QUILATES = [
         ('18K ITALY',    0.740, 'Estándar internacional'),
         ('17K NACIONAL', 0.710, 'El más cotizado'),
@@ -246,7 +219,6 @@ def generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fech
         ('14K',          0.575, ''),
         ('10K',          0.400, 'Joyería moderna'),
     ]
-
     def tabla_html(base, pct_label):
         filas = ""
         for nombre, pct, nota in QUILATES:
@@ -275,7 +247,6 @@ def generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fech
             f'</table>'
             f'</div>'
         )
-
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -354,14 +325,11 @@ body::after{{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;b
 </div>
 </body>
 </html>"""
-
     nombre = f"precios_cripgold_{datetime.datetime.now().strftime('%Y%m%d')}.html"
     ruta   = os.path.join(tempfile.gettempdir(), nombre)
     with open(ruta, 'w', encoding='utf-8') as fh:
         fh.write(html)
-
     print(f"[DASHBOARD] HTML generado: {ruta} ({os.path.getsize(ruta):,} bytes)")
-
     caption = (
         f"💰 <b>Dashboard de Precios CripGold</b> · {fecha}\n"
         f"🥇 Oro: ${oro_usd:,.2f} USD/oz\n"
@@ -371,12 +339,9 @@ body::after{{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;b
     enviar_documento_telegram(ruta, caption)
     print("[DASHBOARD] Enviado a todos los destinatarios.")
     return ruta
-
-
 # ============================================================
 #   TAREA 2 — NOTICIAS V3.2
 # ============================================================
-
 def normalizar_titulo(titulo):
     import re
     STOPWORDS = {
@@ -393,12 +358,10 @@ def normalizar_titulo(titulo):
     t = re.sub(r'[^\w\s]', ' ', t)
     palabras = [p for p in t.split() if p not in STOPWORDS and len(p) > 3]
     return ' '.join(palabras[:6])
-
 DOMINIOS_BLOQUEADOS_FUENTE = [
     "vietnam.vn","vietstock.vn","vnexpress","thanhnien",
     "tuoitre","baodautu","cafef.vn","tinnhanhchungkhoan",
 ]
-
 BASURA = [
     "precio del oro en sjc","anillos de oro de 9999","precio del oro en vietnam",
     "vnd por onza","sjc, precio del oro","tael de oro",
@@ -455,7 +418,6 @@ BASURA = [
     "acueducto","alcantarillado","alcalde","gobernación pide","comunidad pide",
     "pide a muzo","pide a chivor","vías de acceso",
 ]
-
 CONTEXTO_ORO = [
     "precio del oro","cotización del oro","onza de oro","onza troy",
     "mercado del oro","reservas de oro","lingote de oro","lingotes de oro",
@@ -466,7 +428,6 @@ CONTEXTO_ORO = [
     "brics","bancos centrales","reserva en oro","banco central",
     "xau","gold price","gold market",
 ]
-
 CONTEXTO_ESMERALDA = [
     "esmeralda","esmeraldas","piedra preciosa","piedras preciosas",
     "gema","gemas","joya","joyas","quilate","exportación de esmeraldas",
@@ -474,13 +435,11 @@ CONTEXTO_ESMERALDA = [
     "fedesmeraldas","minería de esmeraldas","mina de esmeraldas",
     "esmeralda colombiana","esmeraldas colombianas",
 ]
-
 PALABRAS_PRECIO_ORO = [
     "precio del oro","cotización del oro","xau/usd","precio spot",
     "precio de la onza","sube el oro","baja el oro","cae el oro",
     "onza de oro","precio hoy","cotización hoy",
 ]
-
 CATEGORIAS = {
     'oro': {
         'target': 7,
@@ -536,16 +495,13 @@ CATEGORIAS = {
         ],
     },
 }
-
 def obtener_noticias():
     import xml.etree.ElementTree as ET
     import urllib.parse
     import re as _re
     from email.utils import parsedate_to_datetime
-
     ahora    = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
     hace_72h = ahora - datetime.timedelta(hours=72)
-
     headers = {
         'User-Agent': (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
@@ -553,11 +509,9 @@ def obtener_noticias():
             'Chrome/124.0.0.0 Safari/537.36'
         )
     }
-
     resultados     = {cat: [] for cat in CATEGORIAS}
     titulos_vistos = set()
     precio_oro_count = [0]
-
     def fetch_items(query):
         q_enc = urllib.parse.quote(query)
         url   = (f"https://news.google.com/rss/search"
@@ -565,16 +519,13 @@ def obtener_noticias():
         res   = requests.get(url, headers=headers, timeout=15)
         root  = ET.fromstring(res.content)
         return root.findall('.//item')
-
     def validar(item, categoria):
         titulo   = (item.findtext('title')       or '').strip()
         link     = (item.findtext('link')        or '').strip()
         pub_date = (item.findtext('pubDate')     or '').strip()
         desc_raw = (item.findtext('description') or '').strip()
-
         if not titulo or not link:
             return None
-
         src_elem = item.find('source')
         src_name = ''
         if src_elem is not None:
@@ -582,53 +533,42 @@ def obtener_noticias():
             fuente = (src_name + ' ' + (src_elem.get('url') or '')).lower()
             if any(d in fuente for d in DOMINIOS_BLOQUEADOS_FUENTE):
                 return None
-
         try:
             if parsedate_to_datetime(pub_date) < hace_72h:
                 return None
         except Exception:
             pass
-
         texto       = (titulo + ' ' + desc_raw).lower()
         titulo_solo = titulo.lower()
-
         if any(b in texto for b in BASURA):
             return None
         if any(b in titulo_solo for b in BASURA):
             return None
-
         if categoria == 'oro' and not any(c in titulo_solo for c in CONTEXTO_ORO):
             return None
         if categoria == 'esmeralda' and not any(c in texto for c in CONTEXTO_ESMERALDA):
             return None
-
         if categoria == 'oro':
             es_precio = any(kw in texto for kw in PALABRAS_PRECIO_ORO)
             if es_precio:
                 if precio_oro_count[0] >= 1:
                     return None
                 precio_oro_count[0] += 1
-
         if gestionar_historial(titulo):
             return None
-
         clave = normalizar_titulo(titulo)
         if clave in titulos_vistos:
             return None
-
         desc_clean = _re.sub(r'<[^>]+>', ' ', desc_raw)
         for _e, _r in [('&nbsp;',' '),('&amp;','&'),('&lt;','<'),('&gt;','>'),('&quot;','"'),('&#39;',"'")]:
             desc_clean = desc_clean.replace(_e, _r)
         desc_clean = ' '.join(desc_clean.split())
         if len(desc_clean) > 200:
             desc_clean = desc_clean[:200].rsplit(' ', 1)[0] + '…'
-
         return titulo, link, desc_clean, src_name
-
     for cat_name, cat in CATEGORIAS.items():
         target = cat['target']
         print(f"\n[NOTICIAS] ── {cat['emoji']} {cat['label']} (objetivo: {target}) ──")
-
         for query in cat['queries']:
             if len(resultados[cat_name]) >= target:
                 break
@@ -652,33 +592,27 @@ def obtener_noticias():
                 time.sleep(0.8)
             except Exception as e:
                 print(f"  [ERROR] {cat_name}: {e}")
-
         encontradas = len(resultados[cat_name])
         estado      = "✅" if encontradas >= target else f"⚠️  solo {encontradas}/{target}"
         print(f"  → {cat['label']}: {encontradas}/{target} {estado}")
-
     total = sum(len(v) for v in resultados.values())
     print(f"\n[NOTICIAS] Total: {total} noticias")
     return resultados
-
 def tarea_noticias(fecha):
     print("[NOTICIAS] Iniciando...")
     resultados = obtener_noticias()
     total = sum(len(v) for v in resultados.values())
-
     if total == 0:
         enviar_telegram(
             "⚠️ <b>AGENTE CRIPGOLD — SIN NOTICIAS</b>\n"
             "No se encontraron noticias nuevas en las últimas 72h."
         )
         return []
-
     folio = gestionar_folio("noticias")
     msg   = (
         f"💎 <b>NOTICIAS — METALES Y GEMAS</b> 🏆\n"
         f"📅 <i>{fecha}    #{folio}</i>\n\n"
     )
-
     contador = 1
     for cat_name, cat in CATEGORIAS.items():
         arts = resultados[cat_name]
@@ -694,34 +628,27 @@ def tarea_noticias(fecha):
                 msg += f"<b>{contador}.</b> <a href='{art['url']}'>{art['title']}</a>{src_tag}\n"
                 contador += 1
         msg += "\n"
-
     msg += "🤖 <i>Agente CripGold V3.2 — Investigación finalizada.</i>"
     enviar_telegram(msg)
     print(f"[NOTICIAS] OK — {total} noticias enviadas.")
-
     arts_plana = []
     for cat_name in CATEGORIAS:
         arts_plana.extend(resultados[cat_name])
     return arts_plana
-
 # ============================================================
 #   TAREA 3 — REPORTE HTML DIARIO (Dashboard Premium Noticias)
 # ============================================================
-
 def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None):
     import tempfile
     import re as _re
-
     def esc(t):
         return (t or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
-
     TEMAS = [
         (2, "🇨🇴", "Colombia &amp; Esmeraldas",  "#f5c842"),
         (3, "📈",  "Cotización &amp; Precio",      "#2ecc71"),
         (4, "💎",  "Diamantes",                    "#b389e8"),
         (5, "⚪",  "Plata &amp; Platino",           "#a0aec0"),
     ]
-
     all_text = ' '.join((a['title']+' '+a.get('desc','')).lower() for a in arts)
     BULLISH = ['récord','record','sube','subió','máximo','demanda','rally','alza','aumenta','fuerte','histórico','supera','crece','boom','impulsa']
     BEARISH = ['cae','cayó','baja','bajó','crisis','presión','disminuye','pierde','débil','mínimo','colapso','desploma','riesgo','contracción']
@@ -731,34 +658,27 @@ def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None):
         sent += sum(3 for w in BULLISH if w in t)
         sent -= sum(3 for w in BEARISH if w in t)
     sent = max(5, min(95, sent))
-
     if   sent >= 65: sent_label, sent_color = 'ALCISTA', '#2ecc71'
     elif sent >= 45: sent_label, sent_color = 'NEUTRAL',  '#f39c12'
     else:            sent_label, sent_color = 'BAJISTA',  '#e74c3c'
-
     def kw(words): return sum(1 for w in words if w in all_text)
     geo_arts = [a for a in arts if 'guerra' in (a['title']+a.get('desc','')).lower() or 'trump' in (a['title']+a.get('desc','')).lower() or 'aranceles' in (a['title']+a.get('desc','')).lower()]
     bc_arts  = [a for a in arts if 'banco central' in (a['title']+a.get('desc','')).lower() or 'brics' in (a['title']+a.get('desc','')).lower() or 'reservas' in (a['title']+a.get('desc','')).lower()]
     min_arts = [a for a in arts if 'minería' in (a['title']+a.get('desc','')).lower() or 'producción' in (a['title']+a.get('desc','')).lower()]
-
     ind_bc  = min(95, 40 + len(bc_arts)*12  + kw(['banco central','reservas','brics','repatriación'])*6)
     ind_min = min(95, 35 + len(min_arts)*11 + kw(['producción','minería','toneladas','extracción','récord'])*5)
     ind_inv = sent
     ind_vol = min(95, 15 + len(geo_arts)*15 + kw(['guerra','tensión','misil','aranceles','trump','conflicto'])*8)
-
     gramo_24k = gramo_18k = gramo_14k = 0.0
     if oro_usd and usd_cop:
         gramo_24k = (oro_usd / 31.1034768) * usd_cop
         gramo_18k = gramo_24k * 0.74
         gramo_14k = gramo_24k * 0.575
-
     grupos = {}
     for a in arts:
         grupos.setdefault(a.get('tema', 3), []).append(a)
-
     headline = arts[0] if arts else None
     now_str  = datetime.datetime.now().strftime('%d/%m/%Y %H:%M')
-
     CSS = """
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{--gold:#FFD700;--gold-dk:#B8860B;--gold-dim:#6a5400;--bg:#0C0C0C;--bg2:#121212;--bg3:#181818;--bg4:#1e1e1e;--text:#E8E8E0;--dim:#777;--border:rgba(255,215,0,.13);--border2:rgba(255,215,0,.22);}
@@ -816,7 +736,6 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-h
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.025) 2px,rgba(0,0,0,.025) 4px)}
 @media(max-width:640px){.dash-row{grid-template-columns:1fr}.ticker{flex-direction:column}.tk-sep{width:100%;height:1px}}
 """
-
     if oro_usd and usd_cop:
         ticker_html = (
             f'<div class="tk-item"><div class="tk-lbl">🥇 ORO SPOT</div><div class="tk-val">${oro_usd:,.2f}</div><div class="tk-unit">USD/oz</div></div>'
@@ -831,19 +750,16 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;ba
         )
     else:
         ticker_html = '<div class="tk-item" style="color:#B8860B;text-align:center;width:100%;">Precios no disponibles hoy</div>'
-
     def ind_bar(label, pct, color):
         return (f'<div class="ind-row"><div class="ind-label">{label}</div>'
                 f'<div class="ind-track"><div class="ind-fill" style="width:{pct}%;background:{color};"></div></div>'
                 f'<div class="ind-pct">{pct}%</div></div>')
-
     indicators_html = (
         ind_bar("DEMANDA BANCOS CENTRALES", ind_bc,  "#4a9edd") +
         ind_bar("ACTIVIDAD MINERA GLOBAL",  ind_min, "#e8965a") +
         ind_bar("SENTIMIENTO INVERSOR",     ind_inv, sent_color) +
         ind_bar("VOLATILIDAD GEOPOLÍTICA",  ind_vol, "#e05252")
     )
-
     grupos_html = ""
     for tema_id, icon, label, color in TEMAS:
         if tema_id not in grupos:
@@ -865,10 +781,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;ba
             f'<span class="grupo-cnt">{n} noticia{"s" if n>1 else ""}</span>'
             f'</div>{cards_html}</div>'
         )
-
     ref_text = esc(headline['title']) if headline else 'Sin titular destacado hoy.'
     ref_src  = esc(headline.get('source','')) if headline else ''
-
     html = (
         f'<!DOCTYPE html>\n<html lang="es">\n<head>\n'
         f'<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1.0">\n'
@@ -900,14 +814,103 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;ba
         f'  Metales preciosos &nbsp;·&nbsp; Inversiones &nbsp;·&nbsp; Gemas &nbsp;·&nbsp; Colombia\n</div>\n\n'
         f'</body>\n</html>'
     )
-
     nombre_archivo = f"reporte_cripgold_{datetime.datetime.now().strftime('%Y%m%d')}.html"
     ruta = os.path.join(tempfile.gettempdir(), nombre_archivo)
     with open(ruta, 'w', encoding='utf-8') as fh:
         fh.write(html)
-
     print(f"[REPORTE] HTML generado: {ruta} ({os.path.getsize(ruta):,} bytes)")
     return ruta
+
+# ============================================================
+#   ARCHIVO SEMANAL — función aislada, no toca nada del bot
+# ============================================================
+TEMA_EMOJI_ARCH = {3: "🥇 ORO", 5: "🥈 PLATA", 4: "💎 DIAMANTES", 2: "💚 ESMERALDAS"}
+
+def archivar_noticias_semana(arts, fecha_str):
+    """
+    Archiva las noticias del día en noticias-semana/semana-XX-YYYY.md
+    Completamente aislado — cualquier error se loguea sin interrumpir nada.
+    fecha_str formato esperado: 'DD/MM/YYYY'
+    """
+    try:
+        from datetime import datetime, timedelta
+        import os
+
+        # Parsear fecha desde string DD/MM/YYYY
+        fecha = datetime.strptime(fecha_str, '%d/%m/%Y')
+
+        # Calcular número de semana y ruta del archivo
+        semana   = fecha.isocalendar()[1]
+        año      = fecha.year
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        carpeta  = os.path.join(base_dir, "noticias-semana")
+        os.makedirs(carpeta, exist_ok=True)
+        archivo  = os.path.join(carpeta, f"semana-{semana:02d}-{año}.md")
+
+        # Nombres en español
+        DIAS  = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO","DOMINGO"]
+        MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
+                 "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
+        dia_nombre = DIAS[fecha.weekday()]
+        mes_nombre = MESES[fecha.month - 1]
+        header_dia = f"## {dia_nombre} {fecha.day} {mes_nombre} {año}"
+
+        # Crear archivo con encabezado si no existe
+        if not os.path.exists(archivo):
+            lunes = fecha - timedelta(days=fecha.weekday())
+            mierc = lunes + timedelta(days=9)
+            encabezado = (
+                f"# ARCHIVO NOTICIAS — SEMANA {semana} · {año}\n"
+                f"> Ventana: {DIAS[0]} {lunes.day} → {DIAS[2]} {mierc.day} "
+                f"{MESES[mierc.month-1].capitalize()} {mierc.year}\n"
+                f"> Selección TOP 3 se completa el miércoles en la mañana.\n"
+                f"> Lógica: las mejores noticias pueden caer cualquier día — "
+                f"ninguna se descarta por antigüedad.\n\n---\n\n"
+                f"## CRITERIO DE SELECCIÓN (aplicado cada miércoles)\n"
+                f"1. **Impacto de mercado** — números grandes, movimientos significativos\n"
+                f"2. **Relevancia LatAm** — ángulo Colombia/Perú/México prioritario\n"
+                f"3. **Potencial narrativo** — ¿puede sostener 15 segundos de historia?\n"
+                f"4. **Variedad** — idealmente: 1 macro/institucional + 1 corporativa + 1 regional\n"
+                f"5. **Frescura** — noticia reciente > noticia vieja, salvo que la vieja sea muy superior\n\n---\n"
+            )
+            with open(archivo, "w", encoding="utf-8") as f:
+                f.write(encabezado)
+
+        # Leer contenido actual para evitar duplicados
+        with open(archivo, "r", encoding="utf-8") as f:
+            contenido_actual = f.read()
+
+        if header_dia in contenido_actual:
+            print(f"[ARCHIVO] Ya existe {header_dia} — saltando duplicado")
+            return
+
+        # Agrupar noticias por categoría
+        por_tema = {}
+        for art in arts:
+            t = art.get("tema", 0)
+            por_tema.setdefault(t, []).append(art)
+
+        # Construir bloque del día
+        lineas = [f"\n{header_dia}\n"]
+        for tema_id in [3, 5, 4, 2]:   # oro → plata → diamantes → esmeraldas
+            if tema_id in por_tema:
+                lineas.append(f"\n{TEMA_EMOJI_ARCH[tema_id]}")
+                for i, art in enumerate(por_tema[tema_id], 1):
+                    titulo = art.get("title",  "").strip()
+                    fuente = art.get("source", "").strip()
+                    lineas.append(f"{i}. {titulo} — {fuente}")
+
+        lineas.append("\n---\n")
+        bloque = "\n".join(lineas)
+
+        # Escribir en el archivo
+        with open(archivo, "a", encoding="utf-8") as f:
+            f.write(bloque)
+
+        print(f"[ARCHIVO] ✅ {len(arts)} noticias guardadas → {os.path.basename(archivo)}")
+
+    except Exception as e:
+        print(f"[ARCHIVO] ⚠️  Error archivando (bot no afectado): {e}")
 
 # ============================================================
 #   MAIN
@@ -917,20 +920,15 @@ if __name__ == "__main__":
     print(f"\n{'='*50}")
     print(f"  AGENTE CRIPGOLD V3.2 — {fecha}")
     print(f"{'='*50}\n")
-
     enviar_telegram(f"🤖 <b>Agente CripGold V3.2 — Iniciado</b>\n📅 {fecha}")
-
     # Tarea 1: Precios
     oro_usd, usd_cop, gramo_cop, cambio_pct = tarea_precios(fecha)
-
     # Tarea 1B: Dashboard HTML de precios (uso interno CripGold)
     if gramo_cop:
         print("[DASHBOARD] Generando dashboard de precios...")
         generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fecha)
-
     # Tarea 2: Noticias
     arts = tarea_noticias(fecha)
-
     # Tarea 3: Reporte HTML de noticias
     if arts:
         print("[REPORTE] Generando reporte HTML del día...")
@@ -951,6 +949,6 @@ if __name__ == "__main__":
             print(f"[REPORTE] Enviado a {len(DESTINATARIOS)} destinatarios.")
     else:
         print("[REPORTE] Sin noticias — reporte HTML omitido.")
-
+    archivar_noticias_semana(arts, fecha)
     enviar_telegram("✅ <b>Agente CripGold — Tareas completadas.</b>")
     print("\n[DONE] Agente V3.2 finalizado.")
