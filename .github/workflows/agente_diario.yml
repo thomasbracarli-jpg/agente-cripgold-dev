@@ -1,20 +1,21 @@
 name: Agente CripGold — Diario 9AM
-
 on:
   # Cron en UTC — Colombia es UTC-5, entonces 9AM COL = 14:00 UTC
   #schedule:
     #   - cron: '0 14 * * 1-5'
   #   - cron: '0 14 * * 6'
   #   - cron: '0 14 * * 0'
-
   # Permite dispararlo manualmente desde GitHub (para pruebas)
   workflow_dispatch:
+
+# ← NUEVO: permiso para que el bot pueda guardar archivos en el repo
+permissions:
+  contents: write
 
 jobs:
   ejecutar-agente:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - name: Checkout del repositorio
         uses: actions/checkout@v4
@@ -41,3 +42,12 @@ jobs:
           TELEGRAM_CHATS: ${{ secrets.TELEGRAM_CHATS }}
           NEWS_API_KEY:   ${{ secrets.NEWS_API_KEY }}
         run: python agente_cripgold_v3.py
+
+      # ← NUEVO: guarda el archivo de noticias en el repo después de ejecutar
+      - name: Archivar noticias al repositorio
+        run: |
+          git config user.name "CripGold Bot"
+          git config user.email "action@github.com"
+          git add noticias-semana/ || true
+          git diff --staged --quiet || git commit -m "📰 Noticias $(date '+%Y-%m-%d')"
+          git push || true
