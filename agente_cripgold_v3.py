@@ -7,6 +7,7 @@ import time
 #   plata x2, diamantes x2, esmeraldas con minas,
 #   LatAm extendido, bancos centrales por país
 #   + Reporte HTML diario (Dashboard Premium)
+#   + Base internacional incluida en mensaje de noticias
 # ============================================================
 TOKEN         = os.environ.get("TELEGRAM_TOKEN", "8678579635:AAFbm5FMzbuDKYCnL_ttmoI0Zq5_ytRrYYM")
 DESTINATARIOS = os.environ.get("TELEGRAM_CHATS", "8526092375,5503549435,6915327599").split(",")
@@ -598,7 +599,9 @@ def obtener_noticias():
     total = sum(len(v) for v in resultados.values())
     print(f"\n[NOTICIAS] Total: {total} noticias")
     return resultados
-def tarea_noticias(fecha):
+
+# ── CAMBIO 1/3: se añade parámetro opcional gramo_cop ────────────────────────
+def tarea_noticias(fecha, gramo_cop=None):
     print("[NOTICIAS] Iniciando...")
     resultados = obtener_noticias()
     total = sum(len(v) for v in resultados.values())
@@ -609,9 +612,19 @@ def tarea_noticias(fecha):
         )
         return []
     folio = gestionar_folio("noticias")
+
+    # ── CAMBIO 2/3: línea de base internacional ───────────────────────────────
+    def fmt_gi(v): return f"{int(round(v)):,}".replace(",", ".")
+    base_line = (
+        f"Base internacional: <b>{fmt_gi(gramo_cop)} COP/g</b>\n\n"
+        if gramo_cop else "\n"
+    )
+    # ─────────────────────────────────────────────────────────────────────────
+
     msg   = (
         f"💎 <b>NOTICIAS — METALES Y GEMAS</b> 🏆\n"
-        f"📅 <i>{fecha}    #{folio}</i>\n\n"
+        f"📅 <i>{fecha}    #{folio}</i>\n"
+        f"{base_line}"
     )
     contador = 1
     for cat_name, cat in CATEGORIAS.items():
@@ -820,12 +833,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:999;ba
         fh.write(html)
     print(f"[REPORTE] HTML generado: {ruta} ({os.path.getsize(ruta):,} bytes)")
     return ruta
-
 # ============================================================
 #   ARCHIVO SEMANAL — función aislada, no toca nada del bot
 # ============================================================
 TEMA_EMOJI_ARCH = {3: "🥇 ORO", 5: "🥈 PLATA", 4: "💎 DIAMANTES", 2: "💚 ESMERALDAS"}
-
 def archivar_noticias_semana(arts, fecha_str):
     """
     Archiva las noticias del día en noticias-semana/semana-XX-YYYY.md
@@ -835,27 +846,19 @@ def archivar_noticias_semana(arts, fecha_str):
     try:
         from datetime import datetime, timedelta
         import os
-
-        # Parsear fecha desde string DD/MM/YYYY
         fecha = datetime.strptime(fecha_str, '%d/%m/%Y')
-
-        # Calcular número de semana y ruta del archivo
         semana   = fecha.isocalendar()[1]
         año      = fecha.year
         base_dir = os.path.dirname(os.path.abspath(__file__))
         carpeta  = os.path.join(base_dir, "noticias-semana")
         os.makedirs(carpeta, exist_ok=True)
         archivo  = os.path.join(carpeta, f"semana-{semana:02d}-{año}.md")
-
-        # Nombres en español
         DIAS  = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO","DOMINGO"]
         MESES = ["ENERO","FEBRERO","MARZO","ABRIL","MAYO","JUNIO",
                  "JULIO","AGOSTO","SEPTIEMBRE","OCTUBRE","NOVIEMBRE","DICIEMBRE"]
         dia_nombre = DIAS[fecha.weekday()]
         mes_nombre = MESES[fecha.month - 1]
         header_dia = f"## {dia_nombre} {fecha.day} {mes_nombre} {año}"
-
-        # Crear archivo con encabezado si no existe
         if not os.path.exists(archivo):
             lunes = fecha - timedelta(days=fecha.weekday())
             mierc = lunes + timedelta(days=9)
@@ -875,43 +878,30 @@ def archivar_noticias_semana(arts, fecha_str):
             )
             with open(archivo, "w", encoding="utf-8") as f:
                 f.write(encabezado)
-
-        # Leer contenido actual para evitar duplicados
         with open(archivo, "r", encoding="utf-8") as f:
             contenido_actual = f.read()
-
         if header_dia in contenido_actual:
             print(f"[ARCHIVO] Ya existe {header_dia} — saltando duplicado")
             return
-
-        # Agrupar noticias por categoría
         por_tema = {}
         for art in arts:
             t = art.get("tema", 0)
             por_tema.setdefault(t, []).append(art)
-
-        # Construir bloque del día
         lineas = [f"\n{header_dia}\n"]
-        for tema_id in [3, 5, 4, 2]:   # oro → plata → diamantes → esmeraldas
+        for tema_id in [3, 5, 4, 2]:
             if tema_id in por_tema:
                 lineas.append(f"\n{TEMA_EMOJI_ARCH[tema_id]}")
                 for i, art in enumerate(por_tema[tema_id], 1):
                     titulo = art.get("title",  "").strip()
                     fuente = art.get("source", "").strip()
                     lineas.append(f"{i}. {titulo} — {fuente}")
-
         lineas.append("\n---\n")
         bloque = "\n".join(lineas)
-
-        # Escribir en el archivo
         with open(archivo, "a", encoding="utf-8") as f:
             f.write(bloque)
-
         print(f"[ARCHIVO] ✅ {len(arts)} noticias guardadas → {os.path.basename(archivo)}")
-
     except Exception as e:
         print(f"[ARCHIVO] ⚠️  Error archivando (bot no afectado): {e}")
-
 # ============================================================
 #   MAIN
 # ============================================================
@@ -927,8 +917,8 @@ if __name__ == "__main__":
     if gramo_cop:
         print("[DASHBOARD] Generando dashboard de precios...")
         generar_dashboard_precios_html(oro_usd, usd_cop, gramo_cop, cambio_pct, fecha)
-    # Tarea 2: Noticias
-    arts = tarea_noticias(fecha)
+    # Tarea 2: Noticias — CAMBIO 3/3: se pasa gramo_cop para incluirlo en el mensaje
+    arts = tarea_noticias(fecha, gramo_cop)
     # Tarea 3: Reporte HTML de noticias
     if arts:
         print("[REPORTE] Generando reporte HTML del día...")
