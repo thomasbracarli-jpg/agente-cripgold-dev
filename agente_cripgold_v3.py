@@ -806,7 +806,7 @@ def tarea_noticias(fecha, gramo_cop=None, cambio_pct=None, usd_cop=None, oro_usd
 # ============================================================
 #   TAREA 3 — REPORTE HTML DIARIO (Dashboard Premium Noticias)
 # ============================================================
-def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None, conclusion=""):
+def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None, conclusion="", cambio_pct=None):
     import tempfile
     def esc(t):
         return (t or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
@@ -820,14 +820,23 @@ def generar_reporte_html(arts, fecha, oro_usd=None, usd_cop=None, conclusion="")
     all_text = ' '.join((a['title']+' '+a.get('desc','')).lower() for a in arts)
     BULLISH  = ['récord','record','sube','subió','máximo','demanda','rally','alza','aumenta','fuerte','histórico','supera','crece','boom','impulsa']
     BEARISH  = ['cae','cayó','baja','bajó','crisis','presión','disminuye','pierde','débil','mínimo','colapso','desploma','riesgo','contracción']
-    sent = 50
+
+    # Base anclada al movimiento REAL del precio — coherencia total
+    # Cada 1% de variación mueve 10 puntos. Ej: -1.55% → base = 34.5 (BAJISTA)
+    if cambio_pct is not None:
+        base_sent = 50 + (cambio_pct * 10)
+        base_sent = max(10, min(90, base_sent))
+    else:
+        base_sent = 50
+
+    sent = base_sent
     for a in arts:
         t = (a['title']+' '+a.get('desc','')).lower()
-        sent += sum(3 for w in BULLISH if w in t)
-        sent -= sum(3 for w in BEARISH if w in t)
-    sent = max(5, min(95, sent))
+        sent += sum(2 for w in BULLISH if w in t)
+        sent -= sum(2 for w in BEARISH if w in t)
+    sent = round(max(5, min(95, sent)))
     if   sent >= 65: sent_label, sent_color = 'ALCISTA', '#2ecc71'
-    elif sent >= 45: sent_label, sent_color = 'NEUTRAL',  '#f39c12'
+    elif sent >= 40: sent_label, sent_color = 'NEUTRAL',  '#f39c12'
     else:            sent_label, sent_color = 'BAJISTA',  '#e74c3c'
 
     def kw(words): return sum(1 for w in words if w in all_text)
@@ -1147,7 +1156,7 @@ if __name__ == "__main__":
 
     # Tarea 3: Reporte HTML con ranking + conclusión
     if arts:
-        ruta_reporte = generar_reporte_html(arts, fecha, oro_usd, usd_cop, conclusion)
+        ruta_reporte = generar_reporte_html(arts, fecha, oro_usd, usd_cop, conclusion, cambio_pct)
         if ruta_reporte and os.path.exists(ruta_reporte):
             caption = (
                 f"📊 <b>Reporte CripGold</b> · {fecha}\n"
